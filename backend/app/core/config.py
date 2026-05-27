@@ -3,12 +3,12 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Loadout"
+    APP_NAME: str = "LoadedOut"
     DEBUG: bool = False
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://lifeplan_user:changeme@localhost:5432/lifeplan_db"
-    DATABASE_URL_SYNC: str = "postgresql+psycopg2://lifeplan_user:changeme@localhost:5432/lifeplan_db"
+    DATABASE_URL: str = "postgresql+asyncpg://loadedout_user:changeme@localhost:5432/loadedout_db"
+    DATABASE_URL_SYNC: str = "postgresql+psycopg2://loadedout_user:changeme@localhost:5432/loadedout_db"
 
     # Auth
     SECRET_KEY: str = "change-this-to-a-long-random-string"
@@ -37,14 +37,14 @@ class Settings(BaseSettings):
 
     # MongoDB
     MONGODB_URI: str = ""
-    MONGODB_DB_NAME: str = "lifeplan"
+    MONGODB_DB_NAME: str = "loadedout"
 
     # Google Calendar OAuth (web/server client — used for browser redirect flow)
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8001/api/v1/auth/google/callback"
     # Native deep-link target for Capacitor app (used after OAuth callback)
-    GOOGLE_NATIVE_REDIRECT_URI: str = "com.antigravity.lifeplan://auth"
+    GOOGLE_NATIVE_REDIRECT_URI: str = "com.antigravity.loadedout://auth"
     # Native Google Sign-In client IDs (Android/iOS — registered in GCP OAuth console)
     GOOGLE_ANDROID_CLIENT_ID: str = ""
     GOOGLE_IOS_CLIENT_ID: str = ""
