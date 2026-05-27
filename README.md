@@ -1,4 +1,4 @@
-# Loadout — Personal Routine & Nutrition Assistant
+# LoadedOut — Personal Routine & Nutrition Assistant
 
 A production-grade, multi-platform personal assistant for tracking weekly schedules, logging meals via AI macronutrient estimation, and analyzing workouts. 
 
@@ -15,7 +15,7 @@ The platform ships as both a progressive web application (PWA) and a native Andr
 
 ## Overview
 
-Built to centralize daily habits, Loadout uses Vertex AI (Gemini) to remove the friction from health tracking. 
+Built to centralize daily habits, LoadedOut uses Vertex AI (Gemini) to remove the friction from health tracking. 
 
 Example features:
 - **Instant Nutrition**: Tell the AI *"I ate 200g of grilled chicken and some rice"* and it automatically estimates Calories, Protein, Carbs, and Fats.
@@ -77,7 +77,7 @@ Example features:
 ## Project Structure
 
 ```text
-loadout/
+LoadedOut/
 ├── backend/
 │   ├── app/                      # FastAPI core application
 │   │   ├── api/                  # REST endpoints (auth, meals, schedule)
@@ -109,7 +109,7 @@ loadout/
 Ensure your `.env.prod` is populated inside the `infra/` directory:
 
 ```env
-APP_NAME=Loadout
+APP_NAME=LoadedOut
 DEBUG=false
 DATABASE_URL=postgresql+asyncpg://user:password@db:5432/db
 SECRET_KEY=secure_long_string
