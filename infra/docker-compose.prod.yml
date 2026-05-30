@@ -60,8 +60,9 @@ services:
       MONGODB_DB_NAME: "lifeplan"
       # ADC via GCE metadata server — no credentials file needed on this VM
       GOOGLE_APPLICATION_CREDENTIALS: ""
-    ports:
-      - "8002:8000"
+      GIF_CACHE_DIR: "/data/gifs"
+    volumes:
+      - lifeplan-gifs:/data/gifs
     networks:
       - lifeplan-net
     depends_on:
@@ -78,8 +79,6 @@ services:
     environment:
       MCP_DATABASE_URL: "postgresql://lifeplan_user:${POSTGRES_PASSWORD}@db:5432/lifeplan_db"
       MCP_PORT: "8003"
-    ports:
-      - "8003:8003"
     networks:
       - lifeplan-net
     depends_on:
@@ -115,6 +114,8 @@ volumes:
     name: lifeplan-pgdata
   lifeplan-mongodata:
     name: lifeplan-mongodata
+  lifeplan-gifs:
+    name: lifeplan-gifs
   caddy_data:
     name: lifeplan-caddy-data
   caddy_config:

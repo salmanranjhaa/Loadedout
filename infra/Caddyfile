@@ -1,4 +1,7 @@
 (routes) {
+    handle /health {
+        reverse_proxy backend:8000
+    }
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -20,4 +23,12 @@ loadedout.online {
 
 www.loadedout.online {
     redir https://loadedout.online{uri} permanent
+}
+
+www.salmanranjha.me {
+    reverse_proxy portfolio-web:80
+}
+
+http://salmanranjha.me {
+    redir https://www.salmanranjha.me{uri} permanent
 }
