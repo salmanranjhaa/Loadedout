@@ -187,6 +187,12 @@ export const workoutAPI = {
   deleteTemplate: (id) => request(`/workout/templates/${id}`, { method: "DELETE" }),
 };
 
+export const prAPI = {
+  getAll: () => request("/workout/prs"),
+  upsert: (data) => request("/workout/prs", { method: "POST", body: JSON.stringify(data) }),
+  bulkSync: (prs) => request("/workout/prs/bulk", { method: "POST", body: JSON.stringify({ prs }) }),
+};
+
 export const exerciseAPI = {
   list: (params = {}) => {
     const qs = new URLSearchParams(params).toString();

@@ -1,24 +1,31 @@
-import { useState, useEffect } from "react";
-import { T } from "../design/tokens";
+import { useState, useEffect, useMemo } from "react";
+import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { PageHeader, PageScroll, SectionHead, MiniStat, IllustratedEmptyState, SkeletonCard, LoadingDots } from "../design/components";
-import { analyticsAPI, workoutAPI } from "../utils/api";
+import { analyticsAPI, workoutAPI, prAPI } from "../utils/api";
 import WeightChart from "../components/charts/WeightChart";
 import VolumeChart from "../components/charts/VolumeChart";
+import exerciseData from "../lib/exercises.json";
 
 const RANGES = ["Week", "Month", "3 Months"];
 
-const MOCK_WEIGHTS = Array.from({ length: 30 }, (_, i) => ({
-  date: new Date(Date.now() - (29 - i) * 86400000).toISOString().slice(0, 10),
-  weight_kg: 82.4 - i * 0.028 + Math.sin(i * 0.7) * 0.3,
-}));
+function getMuscleForExercise(exerciseName) {
+  return exerciseData.exercises.find(
+    (e) => e.name.toLowerCase() === (exerciseName || "").toLowerCase()
+  )?.primary || null;
+}
 
-const MOCK_PRs = [
-  { exercise: "Bench Press", value: "102.5 kg", date: "Apr 18", muscle: "chest" },
-  { exercise: "Squat", value: "135 kg", date: "Apr 12", muscle: "legs" },
-  { exercise: "Deadlift", value: "160 kg", date: "Apr 5", muscle: "back" },
-  { exercise: "Overhead Press", value: "70 kg", date: "Mar 28", muscle: "shoulders" },
-];
+function getLocalPRs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("lo_prs") || "{}");
+    return Object.entries(raw).map(([exercise_name, data]) => ({
+      exercise_name,
+      weight_kg: data.weight_kg,
+      reps:      data.reps,
+      date:      data.date,
+    }));
+  } catch { return []; }
+}
 
 function Heatmap({ workouts }) {
   const COLS = 13;
@@ -117,51 +124,115 @@ function NutritionAdherence({ history, targets }) {
   );
 }
 
-function PRTimeline() {
+function PRTimeline({ prs }) {
+  if (!prs || prs.length === 0) {
+    return (
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, margin: "0 20px 16px" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 8 }}>Personal Records</div>
+        <div style={{ fontSize: 13, color: T.textDim, textAlign: "center", padding: "16px 0" }}>
+          No PRs yet — finish a workout to start tracking them.
+        </div>
+      </div>
+    );
+  }
+
+  const sorted = [...prs].sort((a, b) => b.weight_kg - a.weight_kg).slice(0, 10);
+
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, margin: "0 20px 16px" }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>Personal Records</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {MOCK_PRs.map((pr) => (
-          <div key={pr.exercise} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.teal }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{pr.exercise}</div>
-              <div style={{ fontSize: 10, color: T.textDim, textTransform: "capitalize" }}>{pr.muscle}</div>
+        {sorted.map((pr) => {
+          const muscle = getMuscleForExercise(pr.exercise_name);
+          const dotColor = muscle ? (muscleColors[muscle] || T.teal) : T.teal;
+          const e1rm = pr.reps > 1 ? Math.round(pr.weight_kg * (1 + pr.reps / 30)) : pr.weight_kg;
+          return (
+            <div key={pr.exercise_name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.exercise_name}</div>
+                <div style={{ fontSize: 10, color: T.textDim, textTransform: "capitalize" }}>
+                  {muscle || "—"} · {pr.date || ""}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: dotColor, fontFamily: T.fontMono }}>
+                  {pr.weight_kg}kg × {pr.reps}
+                </div>
+                <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>
+                  ~{e1rm}kg 1RM
+                </div>
+              </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.teal, fontFamily: T.fontMono }}>{pr.value}</div>
-              <div style={{ fontSize: 10, color: T.textDim }}>{pr.date}</div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function WeeklySummary() {
+function WeeklySummary({ dashboard, profile }) {
+  const workouts   = dashboard?.fitness_this_week?.workouts    || 0;
+  const minutes    = dashboard?.fitness_this_week?.total_minutes || 0;
+  const avgKcal    = dashboard?.nutrition_this_week?.avg_calories;
+  const avgProtein = dashboard?.nutrition_this_week?.avg_protein;
+  const protTarget = profile?.daily_protein_target;
+  const weightChg  = dashboard?.weight?.week_change;
+
+  if (!dashboard) return null;
+
+  const protPct = protTarget && avgProtein ? Math.round((avgProtein / protTarget) * 100) : null;
+  const protColor = protPct == null ? T.textDim : protPct >= 90 ? T.teal : protPct >= 70 ? T.amber : T.negative;
+
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, margin: "0 20px 16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <Icon name="sparkle" size={14} color={T.teal} />
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Weekly AI Summary</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>This Week</div>
       </div>
-      <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.6 }}>
-        You hit chest <strong style={{ color: T.text }}>2× this week</strong>, up <strong style={{ color: T.teal }}>5% volume</strong> vs last week.
-        Your protein adherence averaged <strong style={{ color: T.amber }}>87%</strong>. Consider adding more back work — you only trained back once.
-        Weight trend is down <strong style={{ color: T.teal }}>0.4 kg</strong>. Keep the deficit moderate.
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        {[
+          ["Workouts",     workouts,                              T.teal],
+          ["Minutes",      minutes,                               T.violet],
+          ["Avg Calories", avgKcal  ? `${avgKcal} kcal`  : "—",  T.amber],
+          ["Protein %",    protPct  ? `${protPct}%`       : "—",  protColor],
+        ].map(([label, value, color]) => (
+          <div key={label} style={{ background: T.elevated, borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
+          </div>
+        ))}
       </div>
+      {weightChg != null && (
+        <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
+          Weight this week:{" "}
+          <strong style={{ color: weightChg < 0 ? T.teal : T.negative }}>
+            {weightChg > 0 ? "+" : ""}{weightChg} kg
+          </strong>
+          {weightChg < 0 ? " — on track for your cut." : " — consider tightening the deficit."}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function AnalyticsPage({ profile, onProfile }) {
-  const [range, setRange] = useState("Month");
-  const [weights, setWeights] = useState(MOCK_WEIGHTS);
+  const [range,    setRange]    = useState("Month");
+  const [weights,  setWeights]  = useState([]);
   const [workouts, setWorkouts] = useState([]);
   const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [prs,      setPRs]      = useState(() => getLocalPRs());
+  const [loading,  setLoading]  = useState(true);
+
+  // Merge local and API PRs, keeping highest weight per exercise
+  function mergePRs(localPRs, apiPRs) {
+    const map = {};
+    for (const p of [...localPRs, ...apiPRs]) {
+      const key = p.exercise_name;
+      if (!map[key] || p.weight_kg > map[key].weight_kg) map[key] = p;
+    }
+    return Object.values(map).sort((a, b) => b.weight_kg - a.weight_kg);
+  }
 
   useEffect(() => {
     (async () => {
@@ -176,25 +247,57 @@ export default function AnalyticsPage({ profile, onProfile }) {
         if (wData?.weights?.length) setWeights(wData.weights);
         if (wkData?.workouts) setWorkouts(wkData.workouts);
       } catch {
-        // use mock
+        // offline or auth issue — keep localStorage data
       } finally {
         setLoading(false);
       }
     })();
   }, [range]);
 
-  const current = dashboard?.weight?.current || weights[weights.length - 1]?.weight_kg;
-  const oldest = weights[0]?.weight_kg;
-  const delta = current && oldest ? (current - oldest).toFixed(1) : null;
+  // Sync localStorage PRs to backend once per session, then load real PRs
+  useEffect(() => {
+    const localPRs = getLocalPRs();
+    if (!localPRs.length) {
+      prAPI.getAll().then((data) => {
+        if (data?.prs?.length) setPRs(data.prs);
+      }).catch(() => {});
+      return;
+    }
+    prAPI.bulkSync(localPRs).then(() =>
+      prAPI.getAll().then((data) => {
+        if (data?.prs?.length) setPRs(mergePRs(localPRs, data.prs));
+      })
+    ).catch(() => {
+      // offline — keep localStorage PRs
+    });
+  }, []);
+
+  const current    = dashboard?.weight?.current || weights[weights.length - 1]?.weight_kg;
+  const oldest     = weights[0]?.weight_kg;
+  const delta      = current && oldest ? (current - oldest).toFixed(1) : null;
   const goalWeight = profile?.target_weight_kg;
 
-  const totalSessions = workouts.length;
-  const totalMinutes = workouts.reduce((s, w) => s + (w.duration_minutes || w.duration || 0), 0);
+  // Merge localStorage history with API workouts for heatmap
+  const localHistory = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("lo_workout_history") || "[]"); } catch { return []; }
+  }, []);
+  const allWorkouts = useMemo(() => {
+    const combined = [...workouts, ...localHistory];
+    const seen = new Set();
+    return combined.filter((w) => {
+      const key = w.id || w.loggedAt || w.date;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [workouts, localHistory]);
 
-  const avgKcal = dashboard?.nutrition_this_week?.avg_calories || 2140;
-  const avgProtein = dashboard?.nutrition_this_week?.avg_protein || 162;
-  const protTarget = profile?.daily_protein_target || 190;
-  const protAdherence = Math.round((avgProtein / protTarget) * 100);
+  const totalSessions = allWorkouts.length;
+  const totalMinutes  = allWorkouts.reduce((s, w) => s + (w.duration_minutes || w.duration || 0), 0);
+
+  const avgProtein   = dashboard?.nutrition_this_week?.avg_protein;
+  const protTarget   = profile?.daily_protein_target;
+  const protAdherence = avgProtein && protTarget ? Math.round((avgProtein / protTarget) * 100) : null;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
@@ -236,9 +339,8 @@ export default function AnalyticsPage({ profile, onProfile }) {
                   {current ? `${current.toFixed(1)} kg` : "—"}
                 </div>
                 {delta && (
-                  <div style={{ fontSize: 11, color: delta < 0 ? T.teal : T.negative, marginTop: 2, fontWeight: 600 }}>
-                    {delta > 0 ? "+" : ""}
-                    {delta} kg
+                  <div style={{ fontSize: 11, color: parseFloat(delta) < 0 ? T.teal : T.negative, marginTop: 2, fontWeight: 600 }}>
+                    {parseFloat(delta) > 0 ? "+" : ""}{delta} kg
                   </div>
                 )}
               </div>
@@ -255,7 +357,14 @@ export default function AnalyticsPage({ profile, onProfile }) {
               </div>
             </div>
 
-            <WeightChart data={weights} goalWeight={goalWeight} />
+            {weights.length > 1 ? (
+              <WeightChart data={weights} goalWeight={goalWeight} />
+            ) : (
+              <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px dashed ${T.border}`, borderRadius: T.rCard, padding: "24px 20px", textAlign: "center" }}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>⚖️</div>
+                <div style={{ fontSize: 13, color: T.textMuted }}>Log your body weight daily to see your trend chart here.</div>
+              </div>
+            )}
           </>
         )}
 
@@ -270,11 +379,11 @@ export default function AnalyticsPage({ profile, onProfile }) {
             <div style={{ padding: "0 20px 12px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
               <MiniStat label="Sessions" value={totalSessions} />
               <MiniStat label="Minutes" value={totalMinutes} />
-              <MiniStat label="Protein %" value={`${protAdherence}%`} />
+              <MiniStat label="Protein %" value={protAdherence ? `${protAdherence}%` : "—"} />
             </div>
 
-            <Heatmap workouts={workouts} />
-            <VolumeChart history={workouts} />
+            <Heatmap workouts={allWorkouts} />
+            <VolumeChart history={allWorkouts} />
           </>
         )}
 
@@ -285,22 +394,20 @@ export default function AnalyticsPage({ profile, onProfile }) {
         {loading ? (
           <SkeletonCard />
         ) : (
-          <>
-            <NutritionAdherence
-              history={dashboard?.history || {}}
-              targets={{ calories: profile?.daily_calorie_target || 2400 }}
-            />
-          </>
+          <NutritionAdherence
+            history={dashboard?.history || {}}
+            targets={{ calories: profile?.daily_calorie_target || 2400 }}
+          />
         )}
 
         {/* PRs */}
         <div style={{ padding: "0 20px 8px" }}>
           <SectionHead title="Records" />
         </div>
-        <PRTimeline />
+        <PRTimeline prs={prs} />
 
-        {/* AI Summary */}
-        <WeeklySummary />
+        {/* Weekly summary */}
+        <WeeklySummary dashboard={dashboard} profile={profile} />
       </PageScroll>
     </div>
   );

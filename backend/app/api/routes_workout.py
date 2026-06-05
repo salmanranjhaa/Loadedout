@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
 from app.models.analytics import WorkoutLog, WorkoutTemplate
+from app.models.fitness import PersonalRecord
 from app.models.user import User
 from app.services.rag import embed_and_store_workout
 from app.services.vertex_ai import analyze_workout
@@ -18,6 +19,18 @@ router = APIRouter(prefix="/workout", tags=["workout"])
 
 WORKOUT_TYPES = ["crossfit", "running", "football", "yoga", "cycling", "stretch",
                  "swimming", "hiit", "walking", "boxing", "pilates", "climbing"]
+
+
+class PRUpsert(BaseModel):
+    exercise_name: str
+    weight_kg: float
+    reps: int
+    date: str
+    notes: Optional[str] = None
+
+
+class PRBulkSync(BaseModel):
+    prs: List[PRUpsert]
 
 
 class WorkoutTemplateCreate(BaseModel):
@@ -283,6 +296,124 @@ async def delete_workout_template(
     await db.delete(t)
     await db.commit()
     return {"deleted": template_id}
+
+
+@router.get("/prs")
+@limiter.limit("100/minute")
+async def get_personal_records(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I return all personal records for the user."""
+    result = await db.execute(
+        select(PersonalRecord)
+        .where(PersonalRecord.user_id == user["sub"])
+        .order_by(PersonalRecord.weight_kg.desc())
+    )
+    prs = result.scalars().all()
+    return {"prs": [_fmt_pr(p) for p in prs]}
+
+
+@router.post("/prs")
+@limiter.limit("60/minute")
+async def upsert_personal_record(
+    request: Request,
+    body: PRUpsert,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I upsert a PR — only updates if the new weight is higher than the stored record."""
+    result = await db.execute(
+        select(PersonalRecord).where(
+            PersonalRecord.user_id == user["sub"],
+            PersonalRecord.exercise_name == body.exercise_name,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        if body.weight_kg > existing.weight_kg:
+            existing.weight_kg = body.weight_kg
+            existing.reps = body.reps
+            try:
+                existing.date = date.fromisoformat(body.date)
+            except ValueError:
+                existing.date = date.today()
+            if body.notes:
+                existing.notes = body.notes
+            await db.commit()
+            await db.refresh(existing)
+        return _fmt_pr(existing)
+    else:
+        try:
+            pr_date = date.fromisoformat(body.date)
+        except ValueError:
+            pr_date = date.today()
+        pr = PersonalRecord(
+            user_id=user["sub"],
+            exercise_name=body.exercise_name,
+            weight_kg=body.weight_kg,
+            reps=body.reps,
+            date=pr_date,
+            notes=body.notes,
+        )
+        db.add(pr)
+        await db.commit()
+        await db.refresh(pr)
+        return _fmt_pr(pr)
+
+
+@router.post("/prs/bulk")
+@limiter.limit("30/minute")
+async def bulk_sync_personal_records(
+    request: Request,
+    body: PRBulkSync,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I bulk-upsert PRs from the client (e.g. syncing localStorage on login)."""
+    synced = 0
+    for entry in body.prs:
+        result = await db.execute(
+            select(PersonalRecord).where(
+                PersonalRecord.user_id == user["sub"],
+                PersonalRecord.exercise_name == entry.exercise_name,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        try:
+            pr_date = date.fromisoformat(entry.date)
+        except ValueError:
+            pr_date = date.today()
+        if existing:
+            if entry.weight_kg > existing.weight_kg:
+                existing.weight_kg = entry.weight_kg
+                existing.reps = entry.reps
+                existing.date = pr_date
+                synced += 1
+        else:
+            db.add(PersonalRecord(
+                user_id=user["sub"],
+                exercise_name=entry.exercise_name,
+                weight_kg=entry.weight_kg,
+                reps=entry.reps,
+                date=pr_date,
+                notes=entry.notes,
+            ))
+            synced += 1
+    await db.commit()
+    return {"synced": synced, "total": len(body.prs)}
+
+
+def _fmt_pr(p: PersonalRecord) -> dict:
+    return {
+        "id": p.id,
+        "exercise_name": p.exercise_name,
+        "weight_kg": p.weight_kg,
+        "reps": p.reps,
+        "date": str(p.date),
+        "notes": p.notes,
+    }
 
 
 def _fmt_template(t: WorkoutTemplate) -> dict:

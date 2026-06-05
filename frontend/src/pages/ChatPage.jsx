@@ -612,16 +612,32 @@ export default function ChatPage({ profile, onProfile }) {
     setLoading(false);
   }
 
-  function handleSaveAction(msg) {
-    if (!msg.actionType || !msg.actionData) return;
+  // editedData is the (possibly user-modified) payload from the action card
+  function handleSaveAction(msg, editedData) {
+    if (!msg.actionType) return;
+    const data = editedData || msg.actionData;
+    if (!data) return;
     if (msg.actionType === "save_meal_template") {
-      return mealsAPI.saveTemplate(msg.actionData);
+      // Log it as today's meal (the primary user intent) and save as template
+      const mealPayload = {
+        name: data.name || "AI Meal",
+        meal_type: data.meal_type || "lunch",
+        calories: parseFloat(data.calories) || 0,
+        protein_g: parseFloat(data.protein_g) || 0,
+        carbs_g: parseFloat(data.carbs_g) || 0,
+        fat_g: parseFloat(data.fat_g) || 0,
+        date: new Date().toISOString().slice(0, 10),
+      };
+      mealsAPI.logManual(mealPayload).catch(() => {});
+      // Also save as template so it appears in FoodSearch later
+      mealsAPI.saveTemplate({ name: mealPayload.name, meal_type: mealPayload.meal_type, ...mealPayload }).catch(() => {});
+      return Promise.resolve();
     }
     if (msg.actionType === "add_schedule_event") {
-      return scheduleAPI.create(msg.actionData);
+      return scheduleAPI.create(data);
     }
     if (msg.actionType === "save_workout_template") {
-      return workoutAPI.saveTemplate(msg.actionData);
+      return workoutAPI.saveTemplate(data);
     }
   }
 
@@ -630,7 +646,7 @@ export default function ChatPage({ profile, onProfile }) {
       <PageHeader title="AI Assistant" subtitle="Your personal fitness coach" profile={profile} onProfile={onProfile} />
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        <div ref={scrollRef} style={{ height: "100%", overflowY: "auto", padding: "0 16px 100px" }}>
+        <div ref={scrollRef} style={{ height: "100%", overflowY: "auto", padding: "0 16px 16px" }}>
           {/* Save hint */}
           <div
             style={{
@@ -681,21 +697,21 @@ export default function ChatPage({ profile, onProfile }) {
                   {!isUser && msg.actionData && msg.actionType === "save_meal_template" && (
                     <MealActionCard
                       data={msg.actionData}
-                      onSave={() => handleSaveAction(msg)}
+                      onSave={(editedData) => handleSaveAction(msg, editedData)}
                       onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
                     />
                   )}
                   {!isUser && msg.actionData && msg.actionType === "add_schedule_event" && (
                     <ScheduleActionCard
                       data={msg.actionData}
-                      onSave={() => handleSaveAction(msg)}
+                      onSave={(editedData) => handleSaveAction(msg, editedData)}
                       onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
                     />
                   )}
                   {!isUser && msg.actionData && msg.actionType === "save_workout_template" && (
                     <WorkoutTemplateCard
                       data={msg.actionData}
-                      onSave={() => handleSaveAction(msg)}
+                      onSave={(editedData) => handleSaveAction(msg, editedData)}
                       onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
                     />
                   )}
@@ -720,23 +736,18 @@ export default function ChatPage({ profile, onProfile }) {
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input — not fixed; sits in flex layout above the fixed nav bar */}
       <div
         style={{
-          position: "fixed",
-          bottom: 0,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "100%",
-          maxWidth: 430,
+          flexShrink: 0,
           background: "rgba(10,10,15,0.95)",
           backdropFilter: "blur(20px)",
           borderTop: `0.5px solid ${T.border}`,
           padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",
-          zIndex: T.z.sticky,
           display: "flex",
           alignItems: "flex-end",
           gap: 8,
+          marginBottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
         }}
       >
         <VoiceInput onTranscript={(t) => setInput((prev) => prev + t)} />

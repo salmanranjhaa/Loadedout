@@ -320,6 +320,7 @@ export default function MealsPage({ profile, onProfile }) {
   const [recipeText, setRecipeText] = useState("");
   const [recipeLoading, setRecipeLoading] = useState(false);
   const [recipeResult, setRecipeResult] = useState(null);
+  const [recipeMealType, setRecipeMealType] = useState("dinner");
 
   async function refresh() {
     try {
@@ -428,7 +429,38 @@ export default function MealsPage({ profile, onProfile }) {
         fat_g: food.fat_g,
         date: selectedDate,
       });
+      if (food._saveAsTemplate) {
+        mealsAPI.saveTemplate({ name: food.name, meal_type: mealType, calories: food.calories, protein_g: food.protein_g, carbs_g: food.carbs_g, fat_g: food.fat_g }).catch(() => {});
+      }
       setAddModal(null);
+      refresh();
+    } catch {}
+  }
+
+  async function handleUpdateMeal(id, payload) {
+    await mealsAPI.updateLog(id, payload);
+    setSelectedMeal((prev) => prev ? { ...prev, ...payload } : prev);
+    refresh();
+  }
+
+  async function handleDeleteMealFromDetail(id) {
+    try {
+      await mealsAPI.deleteLog(id);
+      setSelectedMeal(null);
+      refresh();
+    } catch {}
+  }
+
+  async function handleSaveAsTemplate(meal) {
+    try {
+      await mealsAPI.saveTemplate({
+        name: meal.name,
+        meal_type: meal.meal_type || "lunch",
+        calories: meal.calories || 0,
+        protein_g: meal.protein_g || 0,
+        carbs_g: meal.carbs_g || 0,
+        fat_g: meal.fat_g || 0,
+      });
       refresh();
     } catch {}
   }
@@ -668,24 +700,46 @@ export default function MealsPage({ profile, onProfile }) {
                 >
                   Back
                 </button>
-                <button
-                  onClick={() => {
-                    handleAddFood({ name: "Recipe", ...recipeResult }, "Dinner");
-                    setShowRecipeImporter(false);
-                    setRecipeResult(null);
-                    setRecipeText("");
-                  }}
-                  style={{ flex: 1, padding: "8px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  Log as Dinner
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textDim, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 5 }}>Log as</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {["breakfast", "lunch", "dinner", "snack"].map((mt) => (
+                        <button key={mt} onClick={() => setRecipeMealType(mt)}
+                          style={{ flex: 1, padding: "5px 2px", borderRadius: 7, background: recipeMealType === mt ? T.teal : T.elevated, color: recipeMealType === mt ? "#0A0A0F" : T.text, border: `1px solid ${recipeMealType === mt ? T.teal : T.border}`, fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+                          {mt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleAddFood({ name: "Recipe", ...recipeResult }, recipeMealType.charAt(0).toUpperCase() + recipeMealType.slice(1));
+                      setShowRecipeImporter(false);
+                      setRecipeResult(null);
+                      setRecipeText("");
+                    }}
+                    style={{ width: "100%", padding: "10px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Log Meal
+                  </button>
+                </div>
               </div>
             </div>
           )}
         </div>
       </BottomSheet>
 
-      {selectedMeal && <MealDetailPage meal={selectedMeal} onBack={() => setSelectedMeal(null)} onRefresh={refresh} />}
+      {selectedMeal && (
+        <MealDetailPage
+          meal={selectedMeal}
+          targets={targets}
+          onBack={() => setSelectedMeal(null)}
+          onDelete={() => handleDeleteMealFromDetail(selectedMeal.id)}
+          onUpdate={(payload) => handleUpdateMeal(selectedMeal.id, payload)}
+          onSaveAsTemplate={() => handleSaveAsTemplate(selectedMeal)}
+        />
+      )}
     </div>
   );
 }

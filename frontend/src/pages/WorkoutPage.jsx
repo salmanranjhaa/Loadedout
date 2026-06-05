@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { T } from "../design/tokens";
+import { useState, useEffect, useMemo } from "react";
+import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Chip, PageHeader, PageScroll, SectionHead, IllustratedEmptyState, SkeletonCard, Badge } from "../design/components";
 import { workoutAPI } from "../utils/api";
@@ -9,217 +9,220 @@ import WorkoutHistory from "../components/workout/WorkoutHistory";
 import exerciseData from "../lib/exercises.json";
 
 const SPORTS = [
-  { id: "all", label: "All", icon: "dumbbell" },
+  { id: "all",      label: "All",      icon: "dumbbell" },
   { id: "strength", label: "Strength", icon: "dumbbell" },
-  { id: "cardio", label: "Cardio", icon: "run" },
-  { id: "hyrox", label: "Hyrox", icon: "bolt" },
-  { id: "running", label: "Running", icon: "run" },
-  { id: "yoga", label: "Yoga", icon: "flame" },
+  { id: "cardio",   label: "Cardio",   icon: "run" },
+  { id: "hyrox",    label: "Hyrox",    icon: "bolt" },
+  { id: "running",  label: "Running",  icon: "run" },
+  { id: "yoga",     label: "Yoga",     icon: "flame" },
 ];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function typeColor(t) {
+  return t === "running" ? T.amber : t === "hyrox" ? T.violet : t === "cardio" ? T.amber : T.teal;
+}
+
+function inp() {
+  return {
+    width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: T.rInput,
+    padding: "10px 12px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+  };
+}
+
+// ── Small template card (horizontal carousel) ─────────────────────────────────
 function TemplateCardSmall({ t, onStart }) {
-  const typeColor =
-    t.workout_type === "running"
-      ? T.amber
-      : t.workout_type === "hyrox"
-      ? T.violet
-      : t.workout_type === "cardio"
-      ? T.amber
-      : T.teal;
+  const c = typeColor(t.workout_type);
   return (
-    <div
-      style={{
-        width: 220,
-        flexShrink: 0,
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderRadius: T.rCard,
-        padding: 16,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <Badge color={typeColor} size="sm">
-        {(t.workout_type || "strength").toUpperCase()}
-      </Badge>
+    <div style={{ width: 220, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <Badge color={c} size="sm">{(t.workout_type || "strength").toUpperCase()}</Badge>
       <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{t.name}</div>
       <div style={{ fontSize: 12, color: T.textMuted }}>{t.exercises?.length || 0} exercises · {t.duration || "—"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {(t.muscles || []).slice(0, 3).map((m) => (
-          <span
-            key={m}
-            style={{
-              fontSize: 10,
-              color: T.textMuted,
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: 6,
-              padding: "2px 7px",
-            }}
-          >
-            {m}
-          </span>
+          <span key={m} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 7px" }}>{m}</span>
         ))}
       </div>
-      <button
-        onClick={() => onStart(t)}
-        style={{
-          marginTop: "auto",
-          padding: "8px 0",
-          background: T.teal + "22",
-          color: T.teal,
-          border: `1px solid ${T.teal}44`,
-          borderRadius: 8,
-          fontSize: 12,
-          fontWeight: 700,
-          cursor: "pointer",
-          fontFamily: "inherit",
-        }}
-      >
+      <button onClick={() => onStart(t)} style={{ marginTop: "auto", padding: "8px 0", background: c + "22", color: c, border: `1px solid ${c}44`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
         Start
       </button>
     </div>
   );
 }
 
-function HeroCard({ onStart, onBrowse }) {
+// ── Workout intelligence helpers ──────────────────────────────────────────────
+const MUSCLE_TO_GROUP = {
+  chest:     "Push", back:      "Pull", legs:      "Legs",
+  shoulders: "Push", arms:      "Push", core:      "Core",
+  cardio:    "Cardio",
+};
+const PUSH_MUSCLES = new Set(["chest", "shoulders", "arms"]);
+const PULL_MUSCLES = new Set(["back"]);
+const LEG_MUSCLES  = new Set(["legs"]);
+
+function getMuscleFromExerciseName(name) {
+  const ex = exerciseData.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
+  return ex?.primary || null;
+}
+
+function analyzeWorkoutHistory(history) {
+  if (!history.length) return null;
+  const sorted = [...history].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
+  const lastWorkout = sorted[0];
+
+  // Figure out what muscle groups were in last workout
+  const lastMuscles = new Set(
+    (lastWorkout.exercises || []).map((e) => getMuscleFromExerciseName(e.name)).filter(Boolean)
+  );
+
+  let lastGroup = "Unknown";
+  const isPush = [...lastMuscles].some((m) => PUSH_MUSCLES.has(m));
+  const isPull = [...lastMuscles].some((m) => PULL_MUSCLES.has(m));
+  const isLegs = [...lastMuscles].some((m) => LEG_MUSCLES.has(m));
+  if (isPush) lastGroup = "Push";
+  else if (isPull) lastGroup = "Pull";
+  else if (isLegs) lastGroup = "Legs";
+
+  // Suggest next using PPL cycle
+  const nextGroup = lastGroup === "Push" ? "Pull" : lastGroup === "Pull" ? "Legs" : "Push";
+
+  // Days since last workout
+  const lastDate = new Date(lastWorkout.date || lastWorkout.loggedAt);
+  const daysSince = Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24));
+
+  return { lastGroup, nextGroup, daysSince, lastWorkout };
+}
+
+function getMuscleRecency(history) {
+  const recency = {};
+  const sorted = [...history].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
+  for (const w of sorted) {
+    for (const ex of w.exercises || []) {
+      const m = getMuscleFromExerciseName(ex.name);
+      if (m && !recency[m]) {
+        const date = new Date(w.date || w.loggedAt);
+        recency[m] = Math.floor((Date.now() - date) / (1000 * 60 * 60 * 24));
+      }
+    }
+  }
+  return recency;
+}
+
+const NEXT_MUSCLES = {
+  Push: { muscles: ["Chest", "Shoulders", "Triceps"], description: "Upper body press" },
+  Pull: { muscles: ["Back", "Biceps", "Rear Delts"], description: "Upper body pull" },
+  Legs: { muscles: ["Quads", "Hamstrings", "Glutes"], description: "Lower body" },
+  Core: { muscles: ["Core", "Abs"],                  description: "Core strength" },
+};
+
+// ── Hero card (data-driven) ────────────────────────────────────────────────────
+function HeroCard({ onStart, onBrowse, workoutInsight }) {
+  const insight = workoutInsight;
+  const nextGroup  = insight?.nextGroup  || "Push";
+  const daysSince  = insight?.daysSince;
+  const info       = NEXT_MUSCLES[nextGroup] || NEXT_MUSCLES.Push;
+  const freshnessStr = daysSince == null ? "" : daysSince === 0 ? "last session: today" : daysSince === 1 ? "last session: yesterday" : `last session: ${daysSince}d ago`;
+
   return (
-    <div
-      style={{
-        margin: "0 20px 20px",
-        borderRadius: T.rCard,
-        background: `linear-gradient(135deg,${T.teal}1A,${T.violet}33)`,
-        border: `1px solid ${T.teal}33`,
-        padding: 20,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: -40,
-          right: -40,
-          width: 180,
-          height: 180,
-          borderRadius: "50%",
-          background: `radial-gradient(circle,${T.violet}44,transparent 70%)`,
-          pointerEvents: "none",
-        }}
-      />
+    <div style={{ margin: "0 20px 20px", borderRadius: T.rCard, background: `linear-gradient(135deg,${T.teal}1A,${T.violet}33)`, border: `1px solid ${T.teal}33`, padding: 20, position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: `radial-gradient(circle,${T.violet}44,transparent 70%)`, pointerEvents: "none" }} />
       <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.teal, letterSpacing: 1.4, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
-        Today's suggestion
+        {insight ? "Suggested next" : "Quick start"}
       </div>
       <div style={{ fontSize: 23, fontWeight: 800, color: T.text, letterSpacing: -0.6, marginBottom: 4, lineHeight: 1.15 }}>
-        Push Day · Chest + Tri
+        {nextGroup} Day
       </div>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 20 }}>7 exercises · 60–75 min · last done 4d ago</div>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>
+        {info.description} · {info.muscles.join(", ")}
+      </div>
+      {freshnessStr && (
+        <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginBottom: 16 }}>{freshnessStr}</div>
+      )}
+      {!freshnessStr && <div style={{ marginBottom: 16 }} />}
       <div style={{ display: "flex", gap: 10 }}>
-        <button
-          onClick={onStart}
-          style={{
-            flex: 1,
-            padding: "11px 0",
-            background: T.teal,
-            color: "#0A0A0F",
-            border: "none",
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          Start Suggested
+        <button onClick={onStart} style={{ flex: 1, padding: "11px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+          {insight ? "Start Suggested" : "Quick Start"}
         </button>
-        <button
-          onClick={onBrowse}
-          style={{
-            flex: 1,
-            padding: "11px 0",
-            background: "transparent",
-            color: T.text,
-            border: `1px solid ${T.border}`,
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          Browse Templates
-        </button>
+        <button onClick={onBrowse} style={{ flex: 1, padding: "11px 0", background: "transparent", color: T.text, border: `1px solid ${T.border}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Browse Templates</button>
       </div>
     </div>
   );
 }
 
+// ── Muscle recency widget ─────────────────────────────────────────────────────
+function MuscleRecencyWidget() {
+  const recency = useMemo(() => {
+    const history = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
+    return getMuscleRecency(history);
+  }, []);
+
+  const groups = [
+    { key: "chest",     label: "Chest",     color: muscleColors.chest },
+    { key: "back",      label: "Back",      color: muscleColors.back },
+    { key: "legs",      label: "Legs",      color: muscleColors.legs },
+    { key: "shoulders", label: "Shoulders", color: muscleColors.shoulders },
+    { key: "arms",      label: "Arms",      color: muscleColors.arms },
+    { key: "core",      label: "Core",      color: muscleColors.core },
+  ];
+
+  function statusColor(days) {
+    if (days == null) return T.textDim;
+    if (days <= 1)    return T.teal;
+    if (days <= 3)    return T.amber;
+    return T.negative;
+  }
+  function statusLabel(days) {
+    if (days == null) return "—";
+    if (days === 0)   return "Today";
+    if (days === 1)   return "1d ago";
+    return `${days}d ago`;
+  }
+
+  // Only show if we have any recency data at all
+  const hasData = groups.some((g) => recency[g.key] != null);
+  if (!hasData) return null;
+
+  return (
+    <div style={{ margin: "0 20px 20px" }}>
+      <SectionHead title="Muscle Freshness" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 10 }}>
+        {groups.map(({ key, label, color }) => {
+          const days = recency[key];
+          const sc   = statusColor(days);
+          return (
+            <div key={key} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 10px 8px", textAlign: "center" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: sc, margin: "0 auto 6px" }} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 10, color: sc, fontFamily: T.fontMono, fontWeight: 600 }}>{statusLabel(days)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Speed-dial FAB ─────────────────────────────────────────────────────────────
 function SpeedDialFAB({ onAILog, onManualLog, onNewTemplate }) {
   const [open, setOpen] = useState(false);
   const actions = [
-    { icon: "sparkle", label: "AI Log", color: T.teal, handler: onAILog },
-    { icon: "dumbbell", label: "Manual Log", color: T.amber, handler: onManualLog },
-    { icon: "edit", label: "New Template", color: T.violet, handler: onNewTemplate },
+    { icon: "sparkle",  label: "AI Log",       color: T.teal,   handler: onAILog },
+    { icon: "dumbbell", label: "Manual Log",    color: T.amber,  handler: onManualLog },
+    { icon: "edit",     label: "New Template",  color: T.violet, handler: onNewTemplate },
   ];
   return (
     <div style={{ position: "absolute", right: 20, bottom: 92, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      {open &&
-        actions.map((a, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `speedDialIn 0.15s ${i * 0.05}s both` }}>
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: T.text,
-                background: T.elevated,
-                border: `1px solid ${T.border}`,
-                borderRadius: 8,
-                padding: "4px 10px",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {a.label}
-            </span>
-            <button
-              onClick={() => {
-                setOpen(false);
-                a.handler();
-              }}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 9999,
-                background: a.color + "22",
-                border: `1px solid ${a.color}44`,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: a.color,
-              }}
-            >
-              <Icon name={a.icon} size={18} color={a.color} />
-            </button>
-          </div>
-        ))}
+      <style>{`@keyframes speedDialIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}`}</style>
+      {open && actions.map((a, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `speedDialIn 0.15s ${i * 0.05}s both` }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: T.text, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, padding: "4px 10px", whiteSpace: "nowrap" }}>{a.label}</span>
+          <button onClick={() => { setOpen(false); a.handler(); }} style={{ width: 44, height: 44, borderRadius: 9999, background: a.color + "22", border: `1px solid ${a.color}44`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name={a.icon} size={18} color={a.color} />
+          </button>
+        </div>
+      ))}
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 9999,
-          background: T.teal,
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#0A0A0F",
-          boxShadow: `0 8px 24px ${T.teal}55`,
-          transform: open ? "rotate(45deg)" : "none",
-          transition: "transform 0.2s cubic-bezier(.34,1.56,.64,1)",
-        }}
+        style={{ width: 56, height: 56, borderRadius: 9999, background: T.teal, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 24px ${T.teal}55`, transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s cubic-bezier(.34,1.56,.64,1)" }}
       >
         <Icon name="plus" size={24} color="#0A0A0F" strokeWidth={2.4} />
       </button>
@@ -227,31 +230,25 @@ function SpeedDialFAB({ onAILog, onManualLog, onNewTemplate }) {
   );
 }
 
+// ── AI Workout Logger ─────────────────────────────────────────────────────────
 function AIWorkoutLogger({ onClose, onRefresh }) {
-  const [type, setType] = useState("strength");
-  const [duration, setDuration] = useState("60");
+  const [type,      setType]      = useState("strength");
+  const [duration,  setDuration]  = useState("60");
   const [intensity, setIntensity] = useState("moderate");
-  const [desc, setDesc] = useState("");
+  const [desc,      setDesc]      = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState(null);
-  const [logging, setLogging] = useState(false);
+  const [result,    setResult]    = useState(null);
+  const [logging,   setLogging]   = useState(false);
 
-  const WORKOUT_TYPES = ["strength", "crossfit", "running", "hiit", "hyrox", "yoga", "cycling"];
-  const INTENSITY_OPTS = ["light", "moderate", "intense"];
+  const WORKOUT_TYPES  = ["strength","crossfit","running","hiit","hyrox","yoga","cycling"];
+  const INTENSITY_OPTS = ["light","moderate","intense"];
 
   async function handleAnalyze() {
     setAnalyzing(true);
     try {
-      const r = await workoutAPI.analyze({
-        workout_type: type,
-        duration_minutes: Number(duration),
-        intensity,
-        description: desc || undefined,
-      });
+      const r = await workoutAPI.analyze({ workout_type: type, duration_minutes: Number(duration), intensity, description: desc || undefined });
       setResult(r);
-    } catch (e) {
-      alert(e.message || "Analyze failed");
-    }
+    } catch (e) { alert(e.message || "Analyze failed"); }
     setAnalyzing(false);
   }
 
@@ -259,200 +256,62 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
     if (!result) return;
     setLogging(true);
     try {
-      await workoutAPI.save({
-        workout_type: type,
-        duration_minutes: Number(duration),
-        intensity,
-        description: desc || undefined,
-        ai_analysis: result,
-        calories_burned_est: result.calories_burned || result.calories,
-      });
+      await workoutAPI.save({ workout_type: type, duration_minutes: Number(duration), intensity, description: desc || undefined, ai_analysis: result, calories_burned_est: result.calories_burned || result.calories });
       onRefresh?.();
       onClose();
-    } catch (e) {
-      alert(e.message || "Log failed");
-    }
+    } catch (e) { alert(e.message || "Log failed"); }
     setLogging(false);
   }
 
-  function inp(focused) {
-    return {
-      width: "100%",
-      background: T.elevated,
-      border: `1px solid ${focused ? T.teal : T.border}`,
-      borderRadius: T.rInput,
-      padding: "10px 12px",
-      color: T.text,
-      fontSize: 13,
-      fontFamily: "inherit",
-      outline: "none",
-      boxSizing: "border-box",
-    };
-  }
-
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: T.z.modal,
-        background: "rgba(10,10,15,0.88)",
-        display: "flex",
-        alignItems: "flex-end",
-        backdropFilter: "blur(4px)",
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        style={{
-          width: "100%",
-          background: T.surface,
-          borderRadius: "20px 20px 0 0",
-          border: `1px solid ${T.border}`,
-          borderBottom: "none",
-          padding: "20px 20px 48px",
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-          overflowY: "auto",
-        }}
-      >
+    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,10,15,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>AI Workout Logger</div>
-          <button
-            onClick={onClose}
-            style={{
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: 9999,
-              width: 32,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              color: T.textMuted,
-            }}
-          >
-            <Icon name="x" size={14} />
-          </button>
+          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Workout Type</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {WORKOUT_TYPES.map((wt) => (
-              <button
-                key={wt}
-                onClick={() => setType(wt)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: T.rChip,
-                  background: type === wt ? T.teal : T.elevated,
-                  color: type === wt ? "#0A0A0F" : T.text,
-                  border: `1px solid ${type === wt ? T.teal : T.border}`,
-                  fontSize: 12,
-                  fontWeight: type === wt ? 700 : 500,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  textTransform: "capitalize",
-                }}
-              >
-                {wt}
-              </button>
+              <button key={wt} onClick={() => setType(wt)} style={{ padding: "6px 12px", borderRadius: T.rChip, background: type === wt ? T.teal : T.elevated, color: type === wt ? "#0A0A0F" : T.text, border: `1px solid ${type === wt ? T.teal : T.border}`, fontSize: 12, fontWeight: type === wt ? 700 : 500, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>{wt}</button>
             ))}
           </div>
         </div>
 
         <div>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Duration (minutes)</div>
-          <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} min={1} max={300} style={inp(false)} />
+          <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} min={1} max={300} style={inp()} />
         </div>
 
         <div>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Intensity</div>
           <div style={{ display: "flex", gap: 8 }}>
             {INTENSITY_OPTS.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => setIntensity(opt)}
-                style={{
-                  flex: 1,
-                  padding: "8px 0",
-                  borderRadius: T.rChip,
-                  background:
-                    intensity === opt
-                      ? opt === "light"
-                        ? T.teal
-                        : opt === "intense"
-                        ? T.negative
-                        : T.amber
-                      : T.elevated,
-                  color: intensity === opt ? "#0A0A0F" : T.text,
-                  border: `1px solid ${intensity === opt ? T.border : T.border}`,
-                  fontSize: 12,
-                  fontWeight: intensity === opt ? 700 : 500,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  textTransform: "capitalize",
-                }}
-              >
-                {opt}
-              </button>
+              <button key={opt} onClick={() => setIntensity(opt)} style={{ flex: 1, padding: "8px 0", borderRadius: T.rChip, background: intensity === opt ? (opt === "light" ? T.teal : opt === "intense" ? T.negative : T.amber) : T.elevated, color: intensity === opt ? "#0A0A0F" : T.text, border: `1px solid ${T.border}`, fontSize: 12, fontWeight: intensity === opt ? 700 : 500, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>{opt}</button>
             ))}
           </div>
         </div>
 
         <div>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Notes (optional)</div>
-          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="e.g. 5×5 squat, felt strong…" style={{ ...inp(false), resize: "none" }} />
+          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="e.g. 5×5 squat, felt strong…" style={{ ...inp(), resize: "none" }} />
         </div>
 
         {!result && (
-          <button
-            onClick={handleAnalyze}
-            disabled={analyzing || !duration}
-            style={{
-              padding: "13px 0",
-              background: analyzing ? T.elevated : `linear-gradient(135deg,${T.teal},${T.violet})`,
-              color: analyzing ? T.textMuted : "#0A0A0F",
-              border: "none",
-              borderRadius: T.rCard,
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: analyzing ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
+          <button onClick={handleAnalyze} disabled={analyzing || !duration} style={{ padding: "13px 0", background: analyzing ? T.elevated : `linear-gradient(135deg,${T.teal},${T.violet})`, color: analyzing ? T.textMuted : "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: analyzing ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             <Icon name="sparkle" size={16} color={analyzing ? T.textMuted : "#0A0A0F"} />
             {analyzing ? "Analyzing…" : "Analyze with AI"}
           </button>
         )}
 
         {result && (
-          <div
-            style={{
-              background: T.elevated,
-              border: `1px solid ${T.teal}44`,
-              borderRadius: T.rCard,
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
+          <div style={{ background: T.elevated, border: `1px solid ${T.teal}44`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.teal, letterSpacing: 0.5, textTransform: "uppercase" }}>AI Analysis</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[
-                ["Calories", `${result.calories_burned || result.calories || "—"} kcal`],
-                ["Recovery", result.recovery_time || "—"],
-              ].map(([l, v]) => (
+              {[["Calories", `${result.calories_burned || result.calories || "—"} kcal`], ["Recovery", result.recovery_time || "—"]].map(([l, v]) => (
                 <div key={l} style={{ background: T.surface, borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{l}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{v}</div>
@@ -461,29 +320,11 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
             </div>
             {result.muscles_worked?.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {result.muscles_worked.map((m) => (
-                  <span key={m} style={{ fontSize: 10, color: T.teal, background: T.teal + "18", borderRadius: 6, padding: "3px 8px" }}>
-                    {m}
-                  </span>
-                ))}
+                {result.muscles_worked.map((m) => <span key={m} style={{ fontSize: 10, color: T.teal, background: T.teal + "18", borderRadius: 6, padding: "3px 8px" }}>{m}</span>)}
               </div>
             )}
             {result.notes && <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>{result.notes}</div>}
-            <button
-              onClick={handleLog}
-              disabled={logging}
-              style={{
-                padding: "12px 0",
-                background: T.teal,
-                color: "#0A0A0F",
-                border: "none",
-                borderRadius: T.rCard,
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: logging ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-              }}
-            >
+            <button onClick={handleLog} disabled={logging} style={{ padding: "12px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: logging ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
               {logging ? "Logging…" : "Log Workout"}
             </button>
           </div>
@@ -493,208 +334,251 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
   );
 }
 
-function TemplateBrowser({ onClose, onStart }) {
+// ── Template Browser ──────────────────────────────────────────────────────────
+function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
   const [filter, setFilter] = useState("all");
-  const allTemplates = exerciseData.templates.flatMap((tpl) =>
-    tpl.days.map((day) => ({
-      ...day,
+
+  // Build combined template list from local JSON + API
+  const localTemplates = (exerciseData.templates || []).flatMap((tpl) =>
+    (tpl.days || []).map((day) => ({
+      id:           `${tpl.id}-${day.name}`,
+      name:         day.name,
       templateName: tpl.name,
-      templateId: tpl.id,
       workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
+      exerciseIds:  day.exercises || [],
+      source:       "local",
     }))
   );
+
+  const apiMapped = apiTemplates.map((t) => ({
+    id:           `api-${t.id}`,
+    name:         t.name,
+    templateName: "My Templates",
+    workout_type: t.workout_type || "strength",
+    exerciseIds:  [],
+    exerciseObjs: t.exercises || [],
+    source:       "api",
+  }));
+
+  const allTemplates = [...apiMapped, ...localTemplates];
   const filtered = filter === "all" ? allTemplates : allTemplates.filter((t) => t.workout_type === filter);
 
+  function startTemplate(t) {
+    if (t.source === "api" && t.exerciseObjs) {
+      onStart({ name: t.name, workout_type: t.workout_type, exercises: t.exerciseObjs });
+    } else {
+      onStart({
+        name: t.name,
+        workout_type: t.workout_type,
+        exercises: t.exerciseIds.map((exId) => {
+          const ex = exerciseData.exercises.find((e) => e.id === exId);
+          return { name: ex?.name || exId };
+        }),
+      });
+    }
+  }
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: T.z.modal,
-        background: "rgba(10,10,15,0.88)",
-        display: "flex",
-        alignItems: "flex-end",
-        backdropFilter: "blur(4px)",
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        style={{
-          width: "100%",
-          background: T.surface,
-          borderRadius: "20px 20px 0 0",
-          border: `1px solid ${T.border}`,
-          borderBottom: "none",
-          padding: "20px 20px 48px",
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-          overflowY: "auto",
-        }}
-      >
+    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,10,15,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Browse Templates</div>
-          <button
-            onClick={onClose}
-            style={{
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: 9999,
-              width: 32,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              color: T.textMuted,
-            }}
-          >
-            <Icon name="x" size={14} />
-          </button>
+          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
           {SPORTS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setFilter(s.id)}
-              style={{
-                flexShrink: 0,
-                padding: "6px 14px",
-                borderRadius: 9999,
-                background: filter === s.id ? T.teal : T.elevated,
-                color: filter === s.id ? "#0A0A0F" : T.text,
-                border: `1px solid ${filter === s.id ? T.teal : T.border}`,
-                fontSize: 12,
-                fontWeight: filter === s.id ? 700 : 500,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-                textTransform: "capitalize",
-              }}
-            >
-              {s.label}
-            </button>
+            <button key={s.id} onClick={() => setFilter(s.id)} style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 9999, background: filter === s.id ? T.teal : T.elevated, color: filter === s.id ? "#0A0A0F" : T.text, border: `1px solid ${filter === s.id ? T.teal : T.border}`, fontSize: 12, fontWeight: filter === s.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{s.label}</button>
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {filtered.map((t, i) => {
-            const typeColor = t.workout_type === "running" ? T.amber : t.workout_type === "hyrox" ? T.violet : T.teal;
-            return (
-              <div
-                key={`${t.templateId}-${i}`}
-                style={{
-                  background: T.surface,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: T.rCard,
-                  padding: 14,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
-                <span
-                  style={{
-                    alignSelf: "flex-start",
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: 0.8,
-                    color: typeColor,
-                    background: typeColor + "22",
-                    padding: "2px 7px",
-                    borderRadius: 5,
-                  }}
-                >
-                  {t.templateName}
-                </span>
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{t.name}</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {t.exercises.slice(0, 4).map((exId) => {
-                    const ex = exerciseData.exercises.find((e) => e.id === exId);
-                    return (
-                      <span
-                        key={exId}
-                        style={{
-                          fontSize: 9,
-                          color: T.textMuted,
-                          background: T.elevated,
-                          border: `1px solid ${T.border}`,
-                          borderRadius: 5,
-                          padding: "2px 6px",
-                        }}
-                      >
-                        {ex?.name || exId}
-                      </span>
-                    );
-                  })}
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 0", color: T.textDim, fontSize: 13 }}>No templates for this category.</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {filtered.map((t) => {
+              const c = typeColor(t.workout_type);
+              const exerciseNames = t.source === "api"
+                ? (t.exerciseObjs || []).slice(0, 4).map((e) => e.name)
+                : t.exerciseIds.slice(0, 4).map((id) => exerciseData.exercises.find((e) => e.id === id)?.name || id);
+              return (
+                <div key={t.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span style={{ alignSelf: "flex-start", fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: c, background: c + "22", padding: "2px 7px", borderRadius: 5 }}>{t.templateName}</span>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{t.name}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {exerciseNames.map((name) => (
+                      <span key={name} style={{ fontSize: 9, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 5, padding: "2px 6px" }}>{name}</span>
+                    ))}
+                  </div>
+                  <button onClick={() => startTemplate(t)} style={{ marginTop: 4, padding: "8px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Start</button>
                 </div>
-                <button
-                  onClick={() =>
-                    onStart({
-                      name: t.name,
-                      workout_type: t.workout_type,
-                      exercises: t.exercises.map((exId) => {
-                        const ex = exerciseData.exercises.find((e) => e.id === exId);
-                        return { name: ex?.name || exId };
-                      }),
-                    })
-                  }
-                  style={{
-                    marginTop: 4,
-                    padding: "8px 0",
-                    background: T.teal,
-                    color: "#0A0A0F",
-                    border: "none",
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Start
-                </button>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+// ── New Template Modal ────────────────────────────────────────────────────────
+function NewTemplateModal({ onClose, onSaved }) {
+  const [name,       setName]       = useState("");
+  const [type,       setType]       = useState("strength");
+  const [exercises,  setExercises]  = useState([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [saving,     setSaving]     = useState(false);
+
+  function addExercise(ex) {
+    setExercises((prev) => [...prev, { name: ex.name, id: ex.id }]);
+  }
+
+  function removeExercise(i) {
+    setExercises((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function handleSave() {
+    if (!name.trim()) { alert("Give your template a name"); return; }
+    if (exercises.length === 0) { alert("Add at least one exercise"); return; }
+    setSaving(true);
+    try {
+      await workoutAPI.saveTemplate({
+        name: name.trim(),
+        workout_type: type,
+        exercises: exercises.map((e) => ({ name: e.name })),
+      });
+      onSaved?.();
+      onClose();
+    } catch {
+      // save to localStorage as fallback
+      const local = JSON.parse(localStorage.getItem("lo_custom_templates") || "[]");
+      local.push({ id: `local-${Date.now()}`, name: name.trim(), workout_type: type, exercises });
+      localStorage.setItem("lo_custom_templates", JSON.stringify(local));
+      onSaved?.();
+      onClose();
+    }
+    setSaving(false);
+  }
+
+  const TYPES = ["strength","cardio","hyrox","running","yoga"];
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,10,15,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
+
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>New Template</div>
+            <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+          </div>
+
+          {/* Name */}
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Template Name</div>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Volume…" style={inp()} />
+          </div>
+
+          {/* Type */}
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Type</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {TYPES.map((t) => (
+                <button key={t} onClick={() => setType(t)} style={{ padding: "6px 12px", borderRadius: T.rChip, background: type === t ? typeColor(t) : T.elevated, color: type === t ? "#0A0A0F" : T.text, border: `1px solid ${type === t ? typeColor(t) : T.border}`, fontSize: 12, fontWeight: type === t ? 700 : 500, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>{t}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Exercise list */}
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>
+              Exercises {exercises.length > 0 && `(${exercises.length})`}
+            </div>
+            {exercises.length === 0 ? (
+              <div style={{ background: T.elevated, border: `1px dashed ${T.border}`, borderRadius: T.rCard, padding: "24px 0", textAlign: "center", color: T.textDim, fontSize: 13 }}>
+                No exercises added yet
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {exercises.map((ex, i) => (
+                  <div key={i} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 7, background: T.teal + "22", display: "flex", alignItems: "center", justifyContent: "center", color: T.teal, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{ex.name}</div>
+                    <button onClick={() => removeExercise(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: T.negative }}>
+                      <Icon name="trash" size={14} color={T.negative} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add exercise button */}
+          <button
+            onClick={() => setShowPicker(true)}
+            style={{ padding: "11px 0", background: T.elevated, border: `1px dashed ${T.teal}55`, borderRadius: T.rCard, color: T.teal, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
+            <Icon name="plus" size={14} color={T.teal} />
+            Add Exercise
+          </button>
+
+          {/* Save */}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{ padding: "13px 0", background: saving ? T.elevated : T.teal, color: saving ? T.textMuted : "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          >
+            {saving ? "Saving…" : "Save Template"}
+          </button>
+        </div>
+      </div>
+
+      {showPicker && (
+        <ExerciseBrowser
+          open={showPicker}
+          onClose={() => setShowPicker(false)}
+          onSelectExercise={(ex) => { addExercise(ex); setShowPicker(false); }}
+        />
+      )}
+    </>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function WorkoutPage({ profile, onProfile }) {
-  const [history, setHistory] = useState([]);
-  const [templates, setTemplates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showBrowser, setShowBrowser] = useState(false);
-  const [showAILogger, setShowAILogger] = useState(false);
-  const [liveSession, setLiveSession] = useState(false);
-  const [liveTemplate, setLiveTemplate] = useState(null);
-  const [showExerciseDB, setShowExerciseDB] = useState(false);
+  const [history,         setHistory]      = useState([]);
+  const [templates,       setTemplates]    = useState([]);
+  const [loading,         setLoading]      = useState(true);
+  const [showBrowser,     setShowBrowser]  = useState(false);
+  const [showAILogger,    setShowAILogger] = useState(false);
+  const [showNewTemplate, setShowNewTpl]   = useState(false);
+  const [liveSession,     setLiveSession]  = useState(false);
+  const [liveTemplate,    setLiveTemplate] = useState(null);
+  const [showExerciseDB,  setShowExDB]     = useState(false);
 
   async function refresh() {
     try {
       const [logs, tmpl] = await Promise.all([workoutAPI.getAll(30), workoutAPI.getTemplates()]);
       const localHistory = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
-      const apiLogs = logs?.workouts || [];
-      const merged = [...apiLogs, ...localHistory].sort(
-        (a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt)
-      );
+      const apiLogs      = logs?.workouts || [];
+      const merged       = [...apiLogs, ...localHistory].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
       setHistory(merged.slice(0, 50));
-      if (tmpl?.templates?.length) {
+
+      // Merge API templates + local custom templates
+      const apiTemplates   = tmpl?.templates || [];
+      const localCustom    = JSON.parse(localStorage.getItem("lo_custom_templates") || "[]");
+      const allTemplates   = [...apiTemplates, ...localCustom];
+      if (allTemplates.length) {
         setTemplates(
-          tmpl.templates.map((t) => ({
+          allTemplates.map((t) => ({
             ...t,
-            tag: (t.workout_type || "strength").toUpperCase(),
-            tagColor: t.workout_type === "running" ? T.amber : t.workout_type === "hyrox" ? T.violet : T.teal,
+            tag:      (t.workout_type || "strength").toUpperCase(),
+            tagColor: typeColor(t.workout_type || "strength"),
             exercises: t.exercises?.length || 0,
             duration: t.estimated_duration ? `${t.estimated_duration} min` : "—",
-            muscles: t.exercises?.slice(0, 3).map((e) => e.name) || [],
+            muscles:  t.exercises?.slice(0, 3).map((e) => e.name) || [],
           }))
         );
       }
@@ -703,69 +587,50 @@ export default function WorkoutPage({ profile, onProfile }) {
 
   useEffect(() => {
     (async () => {
-      try {
-        await refresh();
-      } catch {}
+      try { await refresh(); } catch {}
       setLoading(false);
     })();
   }, []);
 
-  const streak = profile?.workout_streak || 4;
+  const streak    = profile?.workout_streak  || 4;
   const totalDays = profile?.total_workout_days || 128;
+
+  const workoutInsight = useMemo(() => analyzeWorkoutHistory(history), [history]);
+
+  function startSession(tpl) {
+    setLiveTemplate(tpl || null);
+    setLiveSession(true);
+  }
+
+  function startSuggestedWorkout() {
+    const nextGroup = workoutInsight?.nextGroup || "Push";
+    // Find the first matching template for this group
+    const match = templates.find((t) => {
+      const name = (t.name || "").toLowerCase();
+      return name.includes(nextGroup.toLowerCase());
+    });
+    startSession(match || null);
+  }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, position: "relative" }}>
-      <style>{`@keyframes speedDialIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}`}</style>
       <PageHeader title="Workout" subtitle={`Day ${streak} of your cut · ${totalDays} days in`} profile={profile} onProfile={onProfile} />
 
       <PageScroll>
-        <HeroCard onStart={() => setLiveSession(true)} onBrowse={() => setShowBrowser(true)} />
+        <HeroCard
+          onStart={startSuggestedWorkout}
+          onBrowse={() => setShowBrowser(true)}
+          workoutInsight={workoutInsight}
+        />
+        <MuscleRecencyWidget />
 
         {/* Quick actions */}
         <div style={{ padding: "0 20px 16px", display: "flex", gap: 8 }}>
-          <button
-            onClick={() => setShowExerciseDB(true)}
-            style={{
-              flex: 1,
-              padding: "10px 0",
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.rCard,
-              color: T.text,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <Icon name="search" size={14} color={T.teal} />
-            Exercise DB
+          <button onClick={() => setShowExDB(true)} style={{ flex: 1, padding: "10px 0", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: T.rCard, color: T.text, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Icon name="search" size={14} color={T.teal} /> Exercise DB
           </button>
-          <button
-            onClick={() => setShowBrowser(true)}
-            style={{
-              flex: 1,
-              padding: "10px 0",
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.rCard,
-              color: T.text,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <Icon name="edit" size={14} color={T.violet} />
-            Templates
+          <button onClick={() => setShowBrowser(true)} style={{ flex: 1, padding: "10px 0", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: T.rCard, color: T.text, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Icon name="edit" size={14} color={T.violet} /> Templates
           </button>
         </div>
 
@@ -774,30 +639,56 @@ export default function WorkoutPage({ profile, onProfile }) {
         </div>
         <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "4px 20px 24px", scrollbarWidth: "none" }}>
           {loading ? (
-            <>
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
+            <><SkeletonCard /><SkeletonCard /></>
+          ) : templates.length > 0 ? (
+            templates.slice(0, 6).map((t) => (
+              <TemplateCardSmall key={t.id} t={t} onStart={startSession} />
+            ))
           ) : (
-            templates.slice(0, 6).map((t) => <TemplateCardSmall key={t.id} t={t} onStart={(tpl) => { setLiveTemplate(tpl); setLiveSession(true); }} />)
+            <div style={{ fontSize: 13, color: T.textDim, padding: "20px 0" }}>
+              No templates yet — create one or browse below.
+            </div>
           )}
         </div>
 
         <div style={{ padding: "0 20px 16px" }}>
           <SectionHead title="Recent Workouts" />
         </div>
-        <WorkoutHistory history={history} loading={loading} onSelect={(w) => {}} />
+        <WorkoutHistory history={history} loading={loading} onSelect={() => {}} />
       </PageScroll>
 
       <SpeedDialFAB
         onAILog={() => setShowAILogger(true)}
-        onManualLog={() => setLiveSession(true)}
-        onNewTemplate={() => setShowBrowser(true)}
+        onManualLog={() => startSession(null)}
+        onNewTemplate={() => setShowNewTpl(true)}
       />
 
-      {showBrowser && <TemplateBrowser onClose={() => setShowBrowser(false)} onStart={(t) => { setShowBrowser(false); setLiveTemplate(t); setLiveSession(true); }} />}
-      {showAILogger && <AIWorkoutLogger onClose={() => setShowAILogger(false)} onRefresh={refresh} />}
-      {showExerciseDB && <ExerciseBrowser open={showExerciseDB} onClose={() => setShowExerciseDB(false)} onSelectExercise={(ex) => { setShowExerciseDB(false); setLiveTemplate({ name: ex.name, exercises: [{ name: ex.name }] }); setLiveSession(true); }} />}
+      {showBrowser && (
+        <TemplateBrowser
+          onClose={() => setShowBrowser(false)}
+          onStart={(t) => { setShowBrowser(false); startSession(t); }}
+          apiTemplates={templates}
+        />
+      )}
+
+      {showAILogger && (
+        <AIWorkoutLogger onClose={() => setShowAILogger(false)} onRefresh={refresh} />
+      )}
+
+      {showExerciseDB && (
+        <ExerciseBrowser
+          open={showExerciseDB}
+          onClose={() => setShowExDB(false)}
+          onSelectExercise={(ex) => {
+            setShowExDB(false);
+            startSession({ name: ex.name, exercises: [{ name: ex.name }] });
+          }}
+        />
+      )}
+
+      {showNewTemplate && (
+        <NewTemplateModal onClose={() => setShowNewTpl(false)} onSaved={refresh} />
+      )}
 
       {liveSession && (
         <ActiveWorkout

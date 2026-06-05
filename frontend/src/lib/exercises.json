@@ -256,5 +256,61 @@
     {"id":"db front raise","name":"Dumbbell Front Raise","primary":"shoulders","secondary":[],"equipment":"dumbbell","difficulty":"beginner","gif":""},
     {"id":"cable front raise","name":"Cable Front Raise","primary":"shoulders","secondary":[],"equipment":"cable","difficulty":"beginner","gif":""}
   ],
-  "templates": []
+  "templates": [
+    {
+      "id": "ppl",
+      "name": "Push / Pull / Legs",
+      "days": [
+        { "name": "Push Day", "focus": "chest", "exercises": ["bp","idbp","cfh","opr","lr","tpr","sc"] },
+        { "name": "Pull Day", "focus": "back", "exercises": ["dl","bbr","lpd","scr","bc","hc","fp"] },
+        { "name": "Leg Day", "focus": "legs", "exercises": ["bs","rdl","lp","le","slc","crs","ht"] }
+      ]
+    },
+    {
+      "id": "upper-lower",
+      "name": "Upper / Lower Split",
+      "days": [
+        { "name": "Upper A", "focus": "chest", "exercises": ["bp","bbr","opr","lpd","lr","bc","hc"] },
+        { "name": "Lower A", "focus": "legs", "exercises": ["bs","rdl","lp","le","slc","crs","ht"] },
+        { "name": "Upper B", "focus": "back", "exercises": ["idbp","tbr","dsp","scr","cgbp","tpr"] },
+        { "name": "Lower B", "focus": "legs", "exercises": ["fs","bss","ht","le","llc","crs"] }
+      ]
+    },
+    {
+      "id": "fullbody",
+      "name": "Full Body",
+      "days": [
+        { "name": "Full Body A", "focus": "fullBody", "exercises": ["bs","bp","bbr","opr","bc","plk"] },
+        { "name": "Full Body B", "focus": "fullBody", "exercises": ["dl","idbp","lpd","dsp","hc","hlr"] },
+        { "name": "Full Body C", "focus": "fullBody", "exercises": ["fs","fdbp","scr","lr","tpr","plk"] }
+      ]
+    },
+    {
+      "id": "bro-split",
+      "name": "Classic Bro Split",
+      "days": [
+        { "name": "Chest Day", "focus": "chest", "exercises": ["bp","idbp","fdbp","cfh","pd","wd"] },
+        { "name": "Back Day", "focus": "back", "exercises": ["dl","bbr","lpd","scr","tbr","fp"] },
+        { "name": "Shoulder Day", "focus": "shoulders", "exercises": ["opr","dsp","lr","fr","rdf","fp"] },
+        { "name": "Arms Day", "focus": "arms", "exercises": ["bc","hc","idc","sc","tpr","cgbp"] },
+        { "name": "Leg Day", "focus": "legs", "exercises": ["bs","rdl","lp","le","slc","crs","ht"] }
+      ]
+    },
+    {
+      "id": "hyrox",
+      "name": "Hyrox Training",
+      "days": [
+        { "name": "Hyrox Day", "focus": "cardio", "exercises": ["rm","spd","wb","ks","se","bbj","fc"] }
+      ]
+    },
+    {
+      "id": "strength-3",
+      "name": "3-Day Strength",
+      "days": [
+        { "name": "Day A – Squat", "focus": "legs", "exercises": ["bs","bp","bbr","opr","plk"] },
+        { "name": "Day B – Press", "focus": "chest", "exercises": ["bs","opr","rdl","lpd","tpr"] },
+        { "name": "Day C – Deadlift", "focus": "back", "exercises": ["dl","bp","bbr","bc","plk"] }
+      ]
+    }
+  ]
 }
