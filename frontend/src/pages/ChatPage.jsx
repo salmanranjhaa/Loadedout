@@ -592,7 +592,14 @@ export default function ChatPage({ profile, onProfile }) {
 
       try {
         const parsed = JSON.parse(content);
-        if (parsed.reply) {
+        if (parsed.action_type) {
+          // AI returned the action directly (no reply wrapper)
+          const { action_type, reply: innerReply, action_data, ...rest } = parsed;
+          actionType = action_type;
+          actionData = action_data || rest;
+          content = innerReply || "I've prepared the details below — review and tap **Save it** when ready.";
+        } else if (parsed.reply) {
+          // Wrapped format: {reply, action_type, action_data}
           content = parsed.reply;
           actionData = parsed.action_data;
           actionType = parsed.action_type;

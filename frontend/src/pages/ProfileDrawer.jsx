@@ -1,10 +1,152 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
 import {
   PageScroll, SettingsRow, SettingsGroup, Toggle, Chip,
 } from "../design/components";
 import { userAPI } from "../utils/api";
+
+// ── Gamification helpers ───────────────────────────────────────────────────────
+function getWorkoutStats() {
+  try {
+    const history = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
+    const prs     = JSON.parse(localStorage.getItem("lo_prs") || "{}");
+    const prCount = Object.keys(prs).length;
+    const totalWorkouts = history.length;
+    const totalVolume   = history.reduce((sum, w) =>
+      sum + (w.exercises || []).reduce((es, e) =>
+        es + (e.sets || []).reduce((ss, s) => ss + (s.weight_kg || 0) * (s.reps || 0), 0), 0), 0);
+
+    // Streak from dates
+    const sortedDates = [...new Set(history.map((w) => (w.date || w.loggedAt || "").slice(0, 10)))]
+      .filter(Boolean).sort().reverse();
+    let streak = 0;
+    const today = new Date().toISOString().slice(0, 10);
+    let check   = today;
+    for (const d of sortedDates) {
+      if (d === check) { streak++; const dt = new Date(check); dt.setDate(dt.getDate() - 1); check = dt.toISOString().slice(0, 10); }
+      else if (d < check) break;
+    }
+
+    return { totalWorkouts, totalVolume: Math.round(totalVolume), prCount, streak };
+  } catch { return { totalWorkouts: 0, totalVolume: 0, prCount: 0, streak: 0 }; }
+}
+
+const XP_PER_WORKOUT   = 150;
+const XP_PER_PR        = 75;
+const XP_PER_1000KG    = 20;
+const LEVEL_BASE_XP    = 500;
+const LEVEL_MULTIPLIER = 1.3;
+
+function calcLevel(xp) {
+  let level = 1;
+  let required = LEVEL_BASE_XP;
+  let accumulated = 0;
+  while (accumulated + required <= xp) {
+    accumulated += required;
+    level++;
+    required = Math.round(LEVEL_BASE_XP * Math.pow(LEVEL_MULTIPLIER, level - 1));
+  }
+  const progress = xp - accumulated;
+  return { level, progress, required, pct: progress / required };
+}
+
+const ACHIEVEMENTS = [
+  { id: "first_workout",  label: "First Rep",       icon: "🏋️", desc: "Completed your first workout",      xp: 200,  check: (s) => s.totalWorkouts >= 1 },
+  { id: "workouts_10",    label: "Getting Serious",  icon: "🔥", desc: "10 workouts done",                  xp: 500,  check: (s) => s.totalWorkouts >= 10 },
+  { id: "workouts_50",    label: "Veteran",          icon: "⚔️", desc: "50 workouts logged",                xp: 2000, check: (s) => s.totalWorkouts >= 50 },
+  { id: "first_pr",       label: "PR Setter",        icon: "🏆", desc: "Set your first personal record",    xp: 300,  check: (s) => s.prCount >= 1 },
+  { id: "pr_5",           label: "Record Breaker",   icon: "💥", desc: "5 personal records",                xp: 750,  check: (s) => s.prCount >= 5 },
+  { id: "pr_20",          label: "PR Machine",       icon: "🚀", desc: "20 personal records",               xp: 2500, check: (s) => s.prCount >= 20 },
+  { id: "streak_7",       label: "Week Warrior",     icon: "📅", desc: "7-day workout streak",              xp: 1000, check: (s) => s.streak >= 7 },
+  { id: "streak_30",      label: "Unstoppable",      icon: "⚡", desc: "30-day streak",                    xp: 5000, check: (s) => s.streak >= 30 },
+  { id: "volume_10k",     label: "Heavy Lifter",     icon: "🏗️", desc: "Lifted 10,000 kg total volume",    xp: 800,  check: (s) => s.totalVolume >= 10000 },
+  { id: "volume_100k",    label: "Iron Legend",      icon: "👑", desc: "100,000 kg total volume",           xp: 5000, check: (s) => s.totalVolume >= 100000 },
+];
+
+function GamificationSection({ profile }) {
+  const stats = useMemo(() => getWorkoutStats(), []);
+
+  const earnedXP =
+    stats.totalWorkouts * XP_PER_WORKOUT +
+    stats.prCount * XP_PER_PR +
+    Math.floor(stats.totalVolume / 1000) * XP_PER_1000KG +
+    ACHIEVEMENTS.filter((a) => a.check(stats)).reduce((sum, a) => sum + a.xp, 0);
+
+  const { level, progress, required, pct } = calcLevel(earnedXP);
+  const earned  = ACHIEVEMENTS.filter((a) => a.check(stats));
+  const locked  = ACHIEVEMENTS.filter((a) => !a.check(stats));
+  const LEVEL_TITLES = ["Novice","Beginner","Dedicated","Consistent","Serious","Advanced","Expert","Elite","Master","Legend"];
+  const title = LEVEL_TITLES[Math.min(Math.floor(level / 10), LEVEL_TITLES.length - 1)];
+
+  return (
+    <div style={{ padding: "0 20px 18px" }}>
+      {/* Level card */}
+      <div style={{ background: `linear-gradient(135deg, ${T.violet}22, ${T.teal}18)`, border: `1px solid ${T.violet}44`, borderRadius: 18, padding: "16px 18px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: `linear-gradient(135deg, ${T.violet}, ${T.teal})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#0A0A0F", flexShrink: 0 }}>
+            {level}
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Level {level} — {title}</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.fontMono, marginTop: 2 }}>{earnedXP.toLocaleString()} XP total</div>
+          </div>
+        </div>
+
+        {/* XP bar */}
+        <div style={{ height: 6, background: T.elevated2, borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${Math.min(pct * 100, 100)}%`, background: `linear-gradient(90deg, ${T.violet}, ${T.teal})`, borderRadius: 3, transition: "width 0.6s ease" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
+          <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>{progress} / {required} XP to next level</span>
+          <span style={{ fontSize: 9, color: T.teal, fontFamily: T.fontMono, fontWeight: 600 }}>+{XP_PER_WORKOUT} XP / workout</span>
+        </div>
+      </div>
+
+      {/* Quick stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+        {[
+          { icon: "dumbbell", label: "Workouts",    value: stats.totalWorkouts },
+          { icon: "trophy",   label: "PRs",         value: stats.prCount },
+          { icon: "fire",     label: "Day Streak",  value: stats.streak },
+        ].map(({ icon, label, value }) => (
+          <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 8px", textAlign: "center" }}>
+            <Icon name={icon} size={14} color={T.teal} />
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, fontFamily: T.fontMono, marginTop: 4 }}>{value}</div>
+            <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Achievements */}
+      <div style={{ fontSize: 11, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 10, paddingLeft: 2 }}>
+        Achievements ({earned.length}/{ACHIEVEMENTS.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {earned.map((a) => (
+          <div key={a.id} style={{ background: `${T.teal}10`, border: `1px solid ${T.teal}33`, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>{a.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{a.label}</div>
+              <div style={{ fontSize: 10, color: T.textMuted }}>{a.desc}</div>
+            </div>
+            <span style={{ fontSize: 10, color: T.teal, fontWeight: 700, fontFamily: T.fontMono, flexShrink: 0 }}>+{a.xp} XP</span>
+          </div>
+        ))}
+        {locked.slice(0, 3).map((a) => (
+          <div key={a.id} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, opacity: 0.5 }}>
+            <span style={{ fontSize: 20, flexShrink: 0, filter: "grayscale(1)" }}>{a.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted }}>{a.label}</div>
+              <div style={{ fontSize: 10, color: T.textDim }}>{a.desc}</div>
+            </div>
+            <span style={{ fontSize: 10, color: T.textDim, fontWeight: 600, fontFamily: T.fontMono, flexShrink: 0 }}>+{a.xp} XP</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ── Avatar hero ────────────────────────────────────────────────────────────────
 function AvatarHero({ profile }) {
@@ -167,6 +309,9 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
       <PageScroll padBottom={60}>
         {/* Hero */}
         <AvatarHero profile={p} />
+
+        {/* Gamification */}
+        <GamificationSection profile={p} />
 
         {/* Full settings button */}
         {onFullProfile && (

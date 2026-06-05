@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { T, muscleColors } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge, BottomSheet } from "../../design/components";
@@ -174,6 +174,21 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
     }
     return [];
   });
+
+  // Belt-and-suspenders: if lazy initializer ran before template arrived, sync now
+  useEffect(() => {
+    if (!open || !template?.exercises?.length || exercises.length > 0) return;
+    setExercises(template.exercises.map((ex) => {
+      const name      = typeof ex === "string" ? ex : (ex.name || String(ex));
+      const lastSets  = getLastPerformance(name);
+      const suggested = getSuggestedWeight(lastSets);
+      const lastReps  = lastSets?.length > 0 ? String(lastSets[lastSets.length - 1].reps) : "";
+      return {
+        name, lastSets: lastSets || [], suggested,
+        sets: [{ reps: lastReps, weight_kg: suggested ? String(suggested) : (lastSets?.[0]?.weight_kg ? String(lastSets[0].weight_kg) : ""), rpe: "", done: false, isWarmup: false }],
+      };
+    }));
+  }, [open, template]);
 
   const [sessionStart]  = useState(Date.now());
   const [elapsed,       setElapsed]      = useState(0);

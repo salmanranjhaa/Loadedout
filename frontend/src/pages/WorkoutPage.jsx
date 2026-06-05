@@ -556,6 +556,7 @@ export default function WorkoutPage({ profile, onProfile }) {
   const [showNewTemplate, setShowNewTpl]   = useState(false);
   const [liveSession,     setLiveSession]  = useState(false);
   const [liveTemplate,    setLiveTemplate] = useState(null);
+  const [sessionKey,      setSessionKey]   = useState(0);
   const [showExerciseDB,  setShowExDB]     = useState(false);
 
   async function refresh() {
@@ -600,16 +601,28 @@ export default function WorkoutPage({ profile, onProfile }) {
   function startSession(tpl) {
     setLiveTemplate(tpl || null);
     setLiveSession(true);
+    setSessionKey((k) => k + 1);
   }
 
   function startSuggestedWorkout() {
     const nextGroup = workoutInsight?.nextGroup || "Push";
-    // Find the first matching template for this group
-    const match = templates.find((t) => {
-      const name = (t.name || "").toLowerCase();
-      return name.includes(nextGroup.toLowerCase());
-    });
-    startSession(match || null);
+
+    // 1. Try user's own API/custom templates first
+    const apiMatch = templates.find((t) => (t.name || "").toLowerCase().includes(nextGroup.toLowerCase()));
+    if (apiMatch) { startSession(apiMatch); return; }
+
+    // 2. Fall back to built-in local JSON templates
+    const localResolved = (exerciseData.templates || [])
+      .flatMap((tpl) => (tpl.days || []).map((day) => ({
+        name:         day.name,
+        workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
+        exercises:    (day.exercises || []).map((exId) => {
+          const ex = exerciseData.exercises.find((e) => e.id === exId);
+          return { name: ex?.name || exId };
+        }),
+      })));
+    const localMatch = localResolved.find((t) => t.name.toLowerCase().includes(nextGroup.toLowerCase()));
+    startSession(localMatch || null);
   }
 
   return (
@@ -692,6 +705,7 @@ export default function WorkoutPage({ profile, onProfile }) {
 
       {liveSession && (
         <ActiveWorkout
+          key={sessionKey}
           open={liveSession}
           onClose={() => { setLiveSession(false); setLiveTemplate(null); refresh(); }}
           template={liveTemplate}
