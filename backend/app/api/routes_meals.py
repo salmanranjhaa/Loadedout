@@ -1,12 +1,13 @@
 import logging
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.meal import MealTemplate, MealLog
 from app.services.rag import embed_and_store_meal
 
@@ -57,7 +58,9 @@ class MealTemplateUpdate(BaseModel):
 
 
 @router.post("/templates")
+@limiter.limit("30/minute")
 async def create_meal_template(
+    request: Request,
     template: MealTemplateCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -83,7 +86,9 @@ async def create_meal_template(
 
 
 @router.get("/templates")
+@limiter.limit("100/minute")
 async def get_meal_templates(
+    request: Request,
     meal_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -103,7 +108,9 @@ async def get_meal_templates(
 
 
 @router.put("/templates/{template_id}")
+@limiter.limit("30/minute")
 async def update_meal_template(
+    request: Request,
     template_id: int,
     body: MealTemplateUpdate,
     db: AsyncSession = Depends(get_db),
@@ -130,7 +137,9 @@ async def update_meal_template(
 
 
 @router.delete("/templates/{template_id}")
+@limiter.limit("30/minute")
 async def delete_meal_template(
+    request: Request,
     template_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -157,7 +166,9 @@ class MealLogUpdate(BaseModel):
 
 
 @router.put("/log/{log_id}")
+@limiter.limit("30/minute")
 async def update_meal_log(
+    request: Request,
     log_id: int,
     body: MealLogUpdate,
     db: AsyncSession = Depends(get_db),
@@ -183,7 +194,9 @@ async def update_meal_log(
 
 
 @router.delete("/log/{log_id}")
+@limiter.limit("30/minute")
 async def delete_meal_log(
+    request: Request,
     log_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -201,7 +214,9 @@ async def delete_meal_log(
 
 
 @router.post("/log")
+@limiter.limit("30/minute")
 async def log_meal(
+    request: Request,
     meal: MealLogCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -231,7 +246,9 @@ async def log_meal(
 
 
 @router.post("/log-manual")
+@limiter.limit("30/minute")
 async def log_meal_manual(
+    request: Request,
     entry: ManualMealEntry,
     _db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
@@ -257,7 +274,9 @@ async def log_meal_manual(
 
 
 @router.get("/today")
+@limiter.limit("100/minute")
 async def get_today_meals(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -287,7 +306,9 @@ async def get_today_meals(
 
 
 @router.get("/history")
+@limiter.limit("100/minute")
 async def get_meal_history(
+    request: Request,
     days: int = 7,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

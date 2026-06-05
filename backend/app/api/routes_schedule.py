@@ -1,11 +1,12 @@
 from datetime import date as date_cls, time
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, func, or_, select
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.schedule import ScheduleEvent, ScheduleModification, EventType
 from app.services.google_calendar import get_google_calendar_status, sync_google_calendar
 from app.services.rag import embed_and_store_modification
@@ -39,7 +40,9 @@ class GoogleCalendarSyncRequest(BaseModel):
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def get_schedule(
+    request: Request,
     day: Optional[int] = None,
     target_date: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -95,7 +98,9 @@ async def get_schedule(
 
 
 @router.get("/google/status")
+@limiter.limit("30/minute")
 async def google_calendar_status(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -104,7 +109,9 @@ async def google_calendar_status(
 
 
 @router.post("/google/sync")
+@limiter.limit("10/minute")
 async def google_calendar_sync(
+    request: Request,
     body: GoogleCalendarSyncRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -127,7 +134,9 @@ async def google_calendar_sync(
 
 
 @router.post("/")
+@limiter.limit("30/minute")
 async def create_event(
+    request: Request,
     event: EventCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -151,7 +160,9 @@ async def create_event(
 
 
 @router.put("/{event_id}")
+@limiter.limit("30/minute")
 async def update_event(
+    request: Request,
     event_id: int,
     update: EventUpdate,
     db: AsyncSession = Depends(get_db),
@@ -214,7 +225,9 @@ async def update_event(
 
 
 @router.delete("/{event_id}")
+@limiter.limit("30/minute")
 async def delete_event(
+    request: Request,
     event_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

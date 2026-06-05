@@ -57,6 +57,35 @@ export function Chip({ children, active, color, style = {}, onClick, size = "md"
   );
 }
 
+// ── Badge ───────────────────────────────────────────────────────────────────
+export function Badge({ children, color, size = "sm" }) {
+  const c = color || T.teal;
+  const sizes = {
+    sm: { fontSize: 10, padding: "2px 8px" },
+    md: { fontSize: 11, padding: "3px 10px" },
+  };
+  const s = sizes[size];
+  return (
+    <span
+      style={{
+        fontSize: s.fontSize,
+        fontWeight: 700,
+        letterSpacing: 0.8,
+        color: c,
+        background: c + "22",
+        padding: s.padding,
+        borderRadius: 6,
+        textTransform: "uppercase",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 // ── FAB ─────────────────────────────────────────────────────────────────────
 export function Fab({ onClick, icon = "plus", color, right = 20, bottom = 92 }) {
   const c = color || T.teal;
@@ -443,6 +472,242 @@ export function EmptyState({ icon, title, subtitle, action }) {
   );
 }
 
+// ── Illustrated Empty States ─────────────────────────────────────────────────
+export function IllustratedEmptyState({ variant, action }) {
+  const configs = {
+    workout: {
+      icon: "dumbbell",
+      title: "No workouts yet",
+      subtitle: "Start your first session to track progress and earn PRs.",
+      color: T.teal,
+    },
+    meals: {
+      icon: "meal",
+      title: "No meals logged",
+      subtitle: "Log your first meal to see macros and nutrition insights.",
+      color: T.amber,
+    },
+    schedule: {
+      icon: "calendar",
+      title: "Nothing scheduled",
+      subtitle: "Add events to build your weekly routine.",
+      color: T.violet,
+    },
+  };
+  const cfg = configs[variant] || configs.workout;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "56px 28px",
+        textAlign: "center",
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          width: 80,
+          height: 80,
+          borderRadius: 28,
+          background: `radial-gradient(circle at 30% 30%, ${cfg.color}33, ${cfg.color}11)`,
+          border: `1px solid ${cfg.color}33`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: cfg.color,
+        }}
+      >
+        <Icon name={cfg.icon} size={32} color={cfg.color} />
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{cfg.title}</div>
+      <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5, maxWidth: 260 }}>{cfg.subtitle}</div>
+      {action}
+    </div>
+  );
+}
+
+// ── Skeleton ─────────────────────────────────────────────────────────────────
+export function Skeleton({ width = "100%", height = 16, circle = false, style = {} }) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: circle ? "50%" : Math.min(height / 2, 8),
+        background: `linear-gradient(90deg, ${T.elevated} 25%, ${T.elevated2} 50%, ${T.elevated} 75%)`,
+        backgroundSize: "200% 100%",
+        animation: "lo-skeleton 1.4s ease-in-out infinite",
+        ...style,
+      }}
+    />
+  );
+}
+
+export function SkeletonCard() {
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <Skeleton width="60%" height={18} />
+      <Skeleton width="100%" height={12} />
+      <Skeleton width="40%" height={12} />
+    </div>
+  );
+}
+
+export function SkeletonRing() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 20px" }}>
+      <Skeleton width={108} height={108} circle />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        <Skeleton width="80%" height={14} />
+        <Skeleton width="60%" height={14} />
+        <Skeleton width="90%" height={14} />
+      </div>
+    </div>
+  );
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+export function Modal({ open, onClose, title, children, actions }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: T.z.modal,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        background: "rgba(10,10,15,0.85)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose?.()}
+    >
+      <div
+        style={{
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.rCard,
+          padding: 20,
+          width: "100%",
+          maxWidth: 340,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          animation: "lo-fade-up 0.2s ease forwards",
+        }}
+      >
+        {title && <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{title}</div>}
+        <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>{children}</div>
+        {actions && (
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Bottom Sheet ─────────────────────────────────────────────────────────────
+export function BottomSheet({ open, onClose, title, children, height = "auto" }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: T.z.modal,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        background: "rgba(10,10,15,0.88)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose?.()}
+    >
+      <div
+        style={{
+          background: T.surface,
+          borderRadius: "20px 20px 0 0",
+          border: `1px solid ${T.border}`,
+          borderBottom: "none",
+          padding: "20px 20px 48px",
+          width: "100%",
+          maxWidth: 430,
+          maxHeight: height === "auto" ? "85vh" : height,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          overflowY: "auto",
+          animation: "lo-slide-up 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards",
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{title}</div>
+          <button
+            onClick={onClose}
+            style={{
+              background: T.elevated,
+              border: `1px solid ${T.border}`,
+              borderRadius: 9999,
+              width: 32,
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: T.textMuted,
+            }}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+export function Toast({ message, type = "info", onClose }) {
+  const colors = { info: T.teal, success: T.positive, error: T.negative, warning: T.warning };
+  const c = colors[type] || T.teal;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 20,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: T.z.toast,
+        background: T.surface,
+        border: `1px solid ${c}55`,
+        borderRadius: 12,
+        padding: "10px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        boxShadow: T.shadow.md,
+        animation: "lo-fade-up 0.2s ease forwards",
+        maxWidth: "calc(100% - 40px)",
+      }}
+    >
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: c }} />
+      <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{message}</span>
+      <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, padding: 2 }}>
+        <Icon name="x" size={12} />
+      </button>
+    </div>
+  );
+}
+
 // ── Loading spinner ──────────────────────────────────────────────────────────
 export function LoadingDots() {
   return (
@@ -464,3 +729,158 @@ export function LoadingDots() {
   );
 }
 
+// ── Spinner ─────────────────────────────────────────────────────────────────
+export function Spinner({ size = 16, color = T.teal }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 9999,
+        border: `2.5px solid ${color}30`,
+        borderTopColor: color,
+        animation: "lo-spin 0.7s linear infinite",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+// ── Button ──────────────────────────────────────────────────────────────────
+export function Button({ children, variant = "primary", size = "md", loading = false, disabled = false, onClick, type = "button", style = {}, icon }) {
+  const sizes = {
+    sm: { padding: "10px 14px", fontSize: 13 },
+    md: { padding: "14px 0", fontSize: 15 },
+    lg: { padding: "16px 0", fontSize: 16 },
+  };
+  const s = sizes[size];
+
+  const variants = {
+    primary: {
+      background: T.teal,
+      color: "#0A0A0F",
+      border: "none",
+      boxShadow: `0 8px 24px ${T.teal}44`,
+    },
+    secondary: {
+      background: T.elevated,
+      color: T.text,
+      border: `1px solid ${T.border}`,
+      boxShadow: "none",
+    },
+    ghost: {
+      background: "transparent",
+      color: T.textMuted,
+      border: "none",
+      boxShadow: "none",
+    },
+  };
+  const v = variants[variant];
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled || loading}
+      style={{
+        width: "100%",
+        padding: s.padding,
+        background: v.background,
+        color: v.color,
+        border: v.border,
+        borderRadius: T.rInput,
+        fontSize: s.fontSize,
+        fontWeight: 700,
+        cursor: (disabled || loading) ? "not-allowed" : "pointer",
+        fontFamily: T.fontFamily,
+        letterSpacing: 0.1,
+        opacity: (disabled || loading) ? 0.55 : 1,
+        boxShadow: v.boxShadow,
+        transition: "all 0.2s ease",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        position: "relative",
+        ...style,
+      }}
+    >
+      {loading && <Spinner size={14} color={v.color} />}
+      {!loading && icon}
+      <span style={{ opacity: loading ? 0.9 : 1 }}>{children}</span>
+    </button>
+  );
+}
+
+// ── Input ───────────────────────────────────────────────────────────────────
+export function Input({ label, type = "text", value, onChange, placeholder, error, autoComplete, style = {}, icon, action }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ width: "100%", ...style }}>
+      {label && (
+        <label
+          style={{
+            fontSize: 12,
+            color: error ? T.negative : T.textMuted,
+            display: "block",
+            marginBottom: 6,
+            fontWeight: 500,
+            transition: "color 0.2s",
+          }}
+        >
+          {label}
+        </label>
+      )}
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          width: "100%",
+          background: T.elevated,
+          borderRadius: T.rInput,
+          border: `1px solid ${error ? T.negative : focused ? T.teal : T.border}`,
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+          boxShadow: focused ? `0 0 0 3px ${T.teal}18` : "none",
+        }}
+      >
+        {icon && (
+          <div style={{ paddingLeft: 14, display: "flex", alignItems: "center", color: T.textMuted }}>
+            {icon}
+          </div>
+        )}
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            padding: "12px 14px",
+            fontSize: 14,
+            color: T.text,
+            fontFamily: T.fontFamily,
+            ...(icon ? { paddingLeft: 10 } : {}),
+            ...(action ? { paddingRight: 10 } : {}),
+          }}
+        />
+        {action && (
+          <div style={{ paddingRight: 14, display: "flex", alignItems: "center" }}>
+            {action}
+          </div>
+        )}
+      </div>
+      {error && typeof error === "string" && (
+        <div style={{ fontSize: 11, color: T.negative, marginTop: 4, fontWeight: 500 }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}

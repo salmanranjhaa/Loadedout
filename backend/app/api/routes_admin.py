@@ -1,11 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user, hash_password
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.models.analytics import WorkoutLog
 from app.models.budget import BudgetEntry
 from app.models.meal import MealLog
@@ -55,7 +56,9 @@ async def _require_admin(
 
 
 @router.get("/overview")
+@limiter.limit("30/minute")
 async def get_admin_overview(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(_require_admin),
 ):
@@ -96,7 +99,9 @@ async def get_admin_overview(
 
 
 @router.get("/users")
+@limiter.limit("30/minute")
 async def list_users(
+    request: Request,
     q: Optional[str] = Query(default=None, max_length=120),
     limit: int = Query(default=200, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -113,7 +118,9 @@ async def list_users(
 
 
 @router.post("/users")
+@limiter.limit("10/minute")
 async def create_user(
+    request: Request,
     body: AdminCreateUser,
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(_require_admin),
@@ -142,7 +149,9 @@ async def create_user(
 
 
 @router.patch("/users/{user_id}")
+@limiter.limit("10/minute")
 async def update_user(
+    request: Request,
     user_id: int,
     body: AdminUpdateUser,
     db: AsyncSession = Depends(get_db),

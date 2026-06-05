@@ -1,8 +1,8 @@
 import re
 import secrets
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ from app.core.auth import (
     decode_token,
     get_current_user,
     hash_password,
+    rotate_refresh_token,
     verify_password,
 )
 from app.core.config import get_settings
@@ -29,6 +30,7 @@ from app.services.google_oauth import (
     token_expiry_from_google_response,
     verify_google_id_token,
 )
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -96,15 +98,44 @@ def _validate_email_format(email: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid email address")
 
 
-def _token_response(user: User) -> TokenResponse:
-    token_data = {"sub": str(user.id)}
-    return TokenResponse(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
-        user_id=user.id,
-        username=user.username,
-        role=user.role or "user",
+def _set_auth_cookies(response: JSONResponse, access_token: str, refresh_token: str) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=settings.SECURE_COOKIES,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        domain=settings.COOKIE_DOMAIN or None,
     )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.SECURE_COOKIES,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        domain=settings.COOKIE_DOMAIN or None,
+    )
+
+
+async def _token_response(user: User, cookie_mode: bool = False) -> JSONResponse | TokenResponse:
+    token_data = {"sub": str(user.id)}
+    access_token = create_access_token(token_data)
+    refresh_token = await create_refresh_token(token_data)
+    data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role or "user",
+    }
+    if cookie_mode:
+        response = JSONResponse(content=data)
+        _set_auth_cookies(response, access_token, refresh_token)
+        return response
+    return TokenResponse(**data)
 
 
 async def _username_exists(db: AsyncSession, candidate: str) -> bool:
@@ -173,8 +204,14 @@ async def _upsert_google_token(
         row.scopes = scopes
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/login")
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    body: LoginRequest,
+    cookie_mode: bool = Query(False, description="Return tokens in httpOnly cookies"),
+    db: AsyncSession = Depends(get_db),
+):
     """I authenticate the user and return an access + refresh token pair."""
     identifier = body.username.strip()
     result = await db.execute(
@@ -196,11 +233,17 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    return _token_response(user)
+    return await _token_response(user, cookie_mode=cookie_mode)
 
 
-@router.post("/register", response_model=TokenResponse)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/register")
+@limiter.limit("5/minute")
+async def register(
+    request: Request,
+    body: RegisterRequest,
+    cookie_mode: bool = Query(False, description="Return tokens in httpOnly cookies"),
+    db: AsyncSession = Depends(get_db),
+):
     """I create a new local user account and immediately return JWT tokens."""
     username = body.username.strip()
     email = body.email.strip().lower()
@@ -228,24 +271,56 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return _token_response(user)
+    return await _token_response(user, cookie_mode=cookie_mode)
 
 
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    """I exchange a valid refresh token for a new access + refresh token pair."""
+@router.post("/refresh")
+@limiter.limit("10/minute")
+async def refresh(
+    request: Request,
+    body: RefreshRequest,
+    cookie_mode: bool = Query(False, description="Return tokens in httpOnly cookies"),
+    db: AsyncSession = Depends(get_db),
+):
+    """I exchange a valid refresh token for a new access + refresh token pair, rotating the family."""
     payload = decode_token(body.refresh_token, expected_type="refresh")
+    old_jti = payload.get("jti")
+    user_id = int(payload["sub"])
 
-    result = await db.execute(select(User).where(User.id == payload["sub"]))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return _token_response(user)
+    if not old_jti:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed refresh token")
+
+    new_refresh_token = await rotate_refresh_token(old_jti, user_id)
+    access_token = create_access_token({"sub": str(user.id)})
+
+    data = {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role or "user",
+    }
+    if cookie_mode:
+        response = JSONResponse(content=data)
+        _set_auth_cookies(response, access_token, new_refresh_token)
+        return response
+    return TokenResponse(**data)
 
 
-@router.post("/google/id-token", response_model=TokenResponse)
-async def google_id_token_login(body: GoogleIdTokenRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/google/id-token")
+@limiter.limit("5/minute")
+async def google_id_token_login(
+    request: Request,
+    body: GoogleIdTokenRequest,
+    cookie_mode: bool = Query(False, description="Return tokens in httpOnly cookies"),
+    db: AsyncSession = Depends(get_db),
+):
     """Accept a Google ID token from native Sign-In, verify it, and return app JWT tokens.
 
     Used by the Android/iOS apps via @codetrix-studio/capacitor-google-auth.
@@ -278,7 +353,7 @@ async def google_id_token_login(body: GoogleIdTokenRequest, db: AsyncSession = D
         user.google_sub = google_sub
         await db.commit()
         await db.refresh(user)
-        return _token_response(user)
+        return await _token_response(user, cookie_mode=cookie_mode)
 
     # mode == "signup"
     existing = await db.execute(select(User).where(User.google_sub == google_sub))
@@ -301,11 +376,13 @@ async def google_id_token_login(body: GoogleIdTokenRequest, db: AsyncSession = D
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return _token_response(user)
+    return await _token_response(user, cookie_mode=cookie_mode)
 
 
 @router.get("/google/login-url", response_model=GoogleAuthUrlResponse)
+@limiter.limit("10/minute")
 async def google_login_url(
+    request: Request,
     origin: str = Query(..., description="Frontend origin, e.g. https://app.example.com"),
     native: bool = Query(False, description="Use native-app callback behavior"),
     mode: str = Query("login", pattern="^(login|signup)$", description="Google auth mode: login or signup"),
@@ -318,7 +395,9 @@ async def google_login_url(
 
 
 @router.get("/google/connect-url", response_model=GoogleAuthUrlResponse)
+@limiter.limit("10/minute")
 async def google_connect_url(
+    request: Request,
     origin: str = Query(..., description="Frontend origin, e.g. https://app.example.com"),
     native: bool = Query(False, description="Use native-app callback behavior"),
     auth_user: dict = Depends(get_current_user),
@@ -336,7 +415,9 @@ async def google_connect_url(
 
 
 @router.get("/google/callback", response_class=HTMLResponse)
+@limiter.limit("20/minute")
 async def google_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -398,7 +479,7 @@ async def google_callback(
             await db.commit()
             await db.refresh(user)
 
-            app_tokens = _token_response(user)
+            app_tokens = await _token_response(user)
             payload = {
                 "status": "success",
                 "mode": "login",
@@ -442,7 +523,7 @@ async def google_callback(
             await db.commit()
             await db.refresh(user)
 
-            app_tokens = _token_response(user)
+            app_tokens = await _token_response(user)
             payload = {
                 "status": "success",
                 "mode": "signup",

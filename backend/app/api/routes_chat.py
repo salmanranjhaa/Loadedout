@@ -1,11 +1,12 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.chat import ChatSession
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,9 @@ class SaveSessionRequest(BaseModel):
 
 
 @router.get("/sessions")
+@limiter.limit("100/minute")
 async def list_sessions(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -42,7 +45,9 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}")
+@limiter.limit("100/minute")
 async def get_session(
+    request: Request,
     session_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -66,7 +71,9 @@ async def get_session(
 
 
 @router.post("/sessions")
+@limiter.limit("30/minute")
 async def save_session(
+    request: Request,
     body: SaveSessionRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -98,7 +105,9 @@ async def save_session(
 
 
 @router.delete("/sessions/{session_id}")
+@limiter.limit("30/minute")
 async def delete_session(
+    request: Request,
     session_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

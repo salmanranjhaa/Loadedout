@@ -70,3 +70,41 @@ body {
 .animate-fade-up {
   animation: lo-fade-up 0.3s ease forwards;
 }
+
+/* Skeleton shimmer */
+@keyframes lo-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Slide up for bottom sheets */
+@keyframes lo-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* Spinner rotation */
+@keyframes lo-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error shake */
+@keyframes lo-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.animate-shake {
+  animation: lo-shake 0.45s ease-in-out;
+}
+
+/* Exercise detail modal scroll */
+.ex-detail-scroll {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.ex-detail-scroll::-webkit-scrollbar {
+  display: none;
+}

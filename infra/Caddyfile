@@ -25,6 +25,10 @@ www.loadedout.online {
     redir https://loadedout.online{uri} permanent
 }
 
+salmanranjha.me {
+    redir https://www.salmanranjha.me{uri} permanent
+}
+
 www.salmanranjha.me {
     reverse_proxy portfolio-web:80
 }

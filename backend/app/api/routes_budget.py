@@ -1,12 +1,13 @@
 import logging
 from datetime import date, timedelta, datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.budget import BudgetEntry
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ class BudgetCreate(BaseModel):
 
 
 @router.post("/")
+@limiter.limit("30/minute")
 async def add_expense(
+    request: Request,
     body: BudgetCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -63,7 +66,9 @@ async def add_expense(
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def get_expenses(
+    request: Request,
     period: str = "week",
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -97,7 +102,9 @@ async def get_expenses(
 
 
 @router.get("/summary")
+@limiter.limit("100/minute")
 async def get_budget_summary(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -150,7 +157,9 @@ async def get_budget_summary(
 
 
 @router.delete("/{entry_id}")
+@limiter.limit("30/minute")
 async def delete_expense(
+    request: Request,
     entry_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

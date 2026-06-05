@@ -1,19 +1,36 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense, lazy } from "react";
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import { isLoggedIn, clearToken, userAPI } from "./utils/api";
+import { initOfflineSync } from "./utils/offline";
 import { T } from "./design/tokens";
 import { Icon } from "./design/icons";
-import SchedulePage from "./pages/SchedulePage";
-import MealsPage from "./pages/MealsPage";
-import WorkoutPage from "./pages/WorkoutPage";
-import BudgetPage from "./pages/BudgetPage";
-import InventoryPage from "./pages/InventoryPage";
-import AnalyticsPage from "./pages/AnalyticsPage";
-import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import ProfileDrawer from "./pages/ProfileDrawer";
 import FullProfilePage from "./pages/FullProfilePage";
-import AdminPage from "./pages/AdminPage";
+
+const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const MealsPage = lazy(() => import("./pages/MealsPage"));
+const WorkoutPage = lazy(() => import("./pages/WorkoutPage"));
+const BudgetPage = lazy(() => import("./pages/BudgetPage"));
+const InventoryPage = lazy(() => import("./pages/InventoryPage"));
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+
+const PREFETCH_MAP = {
+  "/schedule": () => import("./pages/SchedulePage"),
+  "/meals": () => import("./pages/MealsPage"),
+  "/workout": () => import("./pages/WorkoutPage"),
+  "/budget": () => import("./pages/BudgetPage"),
+  "/inventory": () => import("./pages/InventoryPage"),
+  "/analytics": () => import("./pages/AnalyticsPage"),
+  "/chat": () => import("./pages/ChatPage"),
+};
+
+function prefetchRoute(path) {
+  const loader = PREFETCH_MAP[path];
+  if (loader) loader();
+}
 
 const NAV_TABS = [
   { path: "/schedule",  icon: "calendar",  label: "Schedule" },
@@ -60,6 +77,25 @@ function Confetti({ show }) {
   );
 }
 
+function PageFallback() {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        background: T.bg,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: T.textMuted,
+        fontSize: 13,
+        fontFamily: T.fontFamily,
+      }}
+    >
+      Loading…
+    </div>
+  );
+}
+
 export default function App() {
   const [loggedIn, setLoggedIn]         = useState(isLoggedIn());
   const [profile, setProfile]           = useState(null);
@@ -86,6 +122,7 @@ export default function App() {
       }
     }
     load();
+    initOfflineSync();
     return () => { cancelled = true; };
   }, [loggedIn]);
 
@@ -164,20 +201,22 @@ export default function App() {
 
       {/* Page content */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/schedule" replace />} />
-          <Route path="/schedule"  element={<SchedulePage  profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/meals"     element={<MealsPage     profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/workout"   element={<WorkoutPage   profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/budget"    element={<BudgetPage    profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/inventory" element={<InventoryPage profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/analytics" element={<AnalyticsPage profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route path="/chat"      element={<ChatPage      profile={profile} onProfile={() => setShowProfile(true)} />} />
-          <Route
-            path="/admin"
-            element={isAdmin ? <AdminPage currentUser={profile} /> : <Navigate to="/schedule" replace />}
-          />
-        </Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/schedule" replace />} />
+            <Route path="/schedule"  element={<SchedulePage  profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/meals"     element={<MealsPage     profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/workout"   element={<WorkoutPage   profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/budget"    element={<BudgetPage    profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/inventory" element={<InventoryPage profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/analytics" element={<AnalyticsPage profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route path="/chat"      element={<ChatPage      profile={profile} onProfile={() => setShowProfile(true)} />} />
+            <Route
+              path="/admin"
+              element={isAdmin ? <AdminPage currentUser={profile} /> : <Navigate to="/schedule" replace />}
+            />
+          </Routes>
+        </Suspense>
       </div>
 
       {/* Bottom tab bar */}
@@ -202,6 +241,7 @@ export default function App() {
             <NavLink
               key={path}
               to={path}
+              onMouseEnter={() => prefetchRoute(path)}
               style={({ isActive }) => ({
                 display: "flex",
                 flexDirection: "column",

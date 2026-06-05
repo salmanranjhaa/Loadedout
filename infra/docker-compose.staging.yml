@@ -1,0 +1,95 @@
+# Loadedout — Temporary Staging Stack
+# Isolated from production. Used to verify new features before going live.
+#
+# Ports:
+#   8085 → staging frontend (Caddy)
+#   8086 → staging backend (FastAPI)
+#   DB & Mongo are internal-only
+#
+# Deploy:
+#   docker compose -f infra/docker-compose.staging.yml up -d --build
+#
+# View logs:
+#   docker compose -f infra/docker-compose.staging.yml logs -f
+#
+# Destroy:
+#   docker compose -f infra/docker-compose.staging.yml down -v
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: loadedout_staging
+      POSTGRES_USER: staging_user
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-staging_pass_2025}
+    volumes:
+      - staging-pgdata:/var/lib/postgresql/data
+    networks:
+      - loadedout-staging-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staging_user -d loadedout_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - staging-mongodata:/data/db
+    networks:
+      - loadedout-staging-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      MONGODB_URI: "mongodb://mongo:27017"
+      MONGODB_DB_NAME: "loadedout_staging"
+      GOOGLE_APPLICATION_CREDENTIALS: ""
+    ports:
+      - "8086:8000"
+    networks:
+      - loadedout-staging-net
+    depends_on:
+      db:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    volumes:
+      - ../infra/Caddyfile.staging:/etc/caddy/Caddyfile:ro
+    networks:
+      - loadedout-staging-net
+    depends_on:
+      - backend
+
+networks:
+  loadedout-staging-net:
+    driver: bridge
+    name: loadedout-staging-net
+
+volumes:
+  staging-pgdata:
+    name: loadedout-staging-pgdata
+  staging-mongodata:
+    name: loadedout-staging-mongodata

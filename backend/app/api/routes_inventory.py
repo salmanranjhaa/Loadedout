@@ -1,11 +1,12 @@
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.inventory import InventoryItem
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -31,7 +32,9 @@ class InventoryItemUpdate(BaseModel):
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def get_inventory(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -46,7 +49,9 @@ async def get_inventory(
 
 
 @router.post("/")
+@limiter.limit("30/minute")
 async def add_inventory_item(
+    request: Request,
     item: InventoryItemCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -67,7 +72,9 @@ async def add_inventory_item(
 
 
 @router.put("/{item_id}")
+@limiter.limit("30/minute")
 async def update_inventory_item(
+    request: Request,
     item_id: int,
     updates: InventoryItemUpdate,
     db: AsyncSession = Depends(get_db),
@@ -101,7 +108,9 @@ async def update_inventory_item(
 
 
 @router.delete("/{item_id}")
+@limiter.limit("30/minute")
 async def delete_inventory_item(
+    request: Request,
     item_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

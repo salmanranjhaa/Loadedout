@@ -1,0 +1,34 @@
+(routes) {
+    handle /health {
+        reverse_proxy backend:8000
+    }
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    handle /mcp/* {
+        reverse_proxy mcp:8003 {
+            flush_interval -1
+        }
+    }
+    handle {
+        root * /usr/share/caddy
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+loadedout.online {
+    import routes
+}
+
+www.loadedout.online {
+    redir https://loadedout.online{uri} permanent
+}
+
+www.salmanranjha.me {
+    reverse_proxy portfolio-web:80
+}
+
+http://salmanranjha.me {
+    redir https://www.salmanranjha.me{uri} permanent
+}

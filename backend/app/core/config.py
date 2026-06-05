@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Cookies
+    SECURE_COOKIES: bool = False
+    COOKIE_DOMAIN: str = ""
+
     # CORS — comma-separated list of allowed origins
     # capacitor://localhost and http://localhost are required for the Android APK WebView
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,capacitor://localhost,http://localhost,http://192.168.1.182:5173"
@@ -39,6 +43,9 @@ class Settings(BaseSettings):
     MONGODB_URI: str = ""
     MONGODB_DB_NAME: str = "loadedout"
 
+    # WorkoutX Exercise API
+    WORKOUTX_API_KEY: str = ""
+
     # Google Calendar OAuth (web/server client — used for browser redirect flow)
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
@@ -58,6 +65,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"
+
 
 
 @lru_cache()

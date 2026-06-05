@@ -82,7 +82,9 @@ async def analyze_workout_route(
 
 
 @router.post("/")
+@limiter.limit("30/minute")
 async def save_workout(
+    request: Request,
     entry: WorkoutSaveRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -119,7 +121,9 @@ async def save_workout(
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def get_workouts(
+    request: Request,
     days: int = 30,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -150,7 +154,9 @@ async def get_workouts(
 
 
 @router.get("/stats")
+@limiter.limit("100/minute")
 async def get_workout_stats(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -185,7 +191,9 @@ async def get_workout_stats(
 
 
 @router.get("/templates")
+@limiter.limit("100/minute")
 async def get_workout_templates(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -200,7 +208,9 @@ async def get_workout_templates(
 
 
 @router.post("/templates")
+@limiter.limit("30/minute")
 async def save_workout_template(
+    request: Request,
     body: WorkoutTemplateCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -223,7 +233,9 @@ async def save_workout_template(
 
 
 @router.put("/templates/{template_id}")
+@limiter.limit("30/minute")
 async def update_workout_template(
+    request: Request,
     template_id: int,
     body: WorkoutTemplateUpdate,
     db: AsyncSession = Depends(get_db),
@@ -251,7 +263,9 @@ async def update_workout_template(
 
 
 @router.delete("/templates/{template_id}")
+@limiter.limit("30/minute")
 async def delete_workout_template(
+    request: Request,
     template_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -284,7 +298,9 @@ def _fmt_template(t: WorkoutTemplate) -> dict:
 
 
 @router.delete("/{workout_id}")
+@limiter.limit("30/minute")
 async def delete_workout(
+    request: Request,
     workout_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),

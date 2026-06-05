@@ -3,6 +3,8 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
+import { isOnline, queueRequest, initOfflineQueue } from "./offline";
+
 // I handle all API communication with the FastAPI backend
 const API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
 const FALLBACK_PUBLIC_WEB_ORIGIN = "https://loadedout.online";
@@ -55,6 +57,8 @@ export function clearToken() {
   localStorage.removeItem("lifeplan_refresh_token");
 }
 
+initOfflineQueue();
+
 export function isLoggedIn() {
   return !!getToken();
 }
@@ -67,19 +71,35 @@ async function request(path, options = {}) {
     ...options.headers,
   };
 
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const url = `${API_BASE}${path}`;
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(options.method || "GET");
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Request failed" }));
-    if (response.status === 401 && getToken()) {
-      // Only force-logout if we had a token (session expired), not on login attempts
-      clearToken();
-      window.location.reload();
-    }
-    throw new Error(error.detail || `HTTP ${response.status}`);
+  if (!isOnline() && isMutation) {
+    queueRequest(url, { ...options, headers });
+    return { queued: true };
   }
 
-  return response.json();
+  try {
+    const response = await fetch(url, { ...options, headers });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Request failed" }));
+      if (response.status === 401 && getToken()) {
+        // Only force-logout if we had a token (session expired), not on login attempts
+        clearToken();
+        window.location.reload();
+      }
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  } catch (err) {
+    if (isMutation && !err.message?.includes("HTTP ")) {
+      queueRequest(url, { ...options, headers });
+      return { queued: true };
+    }
+    throw err;
+  }
 }
 
 export const authAPI = {
@@ -167,6 +187,14 @@ export const workoutAPI = {
   deleteTemplate: (id) => request(`/workout/templates/${id}`, { method: "DELETE" }),
 };
 
+export const exerciseAPI = {
+  list: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/exercises/?${qs}`);
+  },
+  get: (id) => request(`/exercises/${id}`),
+};
+
 export const budgetAPI = {
   add: (data) => request("/budget/", { method: "POST", body: JSON.stringify(data) }),
   getAll: (period) => request(`/budget/?period=${period || "week"}`),
@@ -175,10 +203,10 @@ export const budgetAPI = {
 };
 
 export const aiAPI = {
-  chat: (message, history, contextType) =>
+  chat: (message, history, contextType, context) =>
     request("/ai/chat", {
       method: "POST",
-      body: JSON.stringify({ message, conversation_history: history, context_type: contextType }),
+      body: JSON.stringify({ message, conversation_history: history, context_type: contextType, context }),
     }),
   swapMeal: (mealId, reason, preferences) =>
     request("/ai/swap-meal", {

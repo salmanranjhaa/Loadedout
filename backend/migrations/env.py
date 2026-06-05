@@ -8,12 +8,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.core.database import Base
-from app.models.user import User
+from app.models.user import User, RefreshToken  # noqa: F401
 from app.models.schedule import ScheduleEvent, ScheduleModification
 from app.models.meal import MealTemplate, MealLog, GroceryList
 from app.models.analytics import WeightLog, WorkoutLog, DailySnapshot
-from app.models.chat import ChatSession  # noqa: F401 - registers table with metadata
+from app.models.chat import ChatSession  # noqa: F401
 from app.models.google_oauth import GoogleOAuthToken  # noqa: F401
+from app.models.fitness import PersonalRecord, WaterLog, UserGoal, WorkoutSet  # noqa: F401
+from app.models.budget import BudgetEntry  # noqa: F401
+from app.models.inventory import InventoryItem  # noqa: F401
+from app.models.exercise import Exercise  # noqa: F401
 
 config = context.config
 

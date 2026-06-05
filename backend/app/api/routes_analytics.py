@@ -1,12 +1,13 @@
 import logging
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.analytics import WeightLog, WorkoutLog, DailySnapshot
 from app.models.meal import MealLog
 from app.models.budget import BudgetEntry
@@ -36,7 +37,9 @@ class WorkoutEntry(BaseModel):
 
 # I handle weight tracking
 @router.post("/weight")
+@limiter.limit("30/minute")
 async def log_weight(
+    request: Request,
     entry: WeightEntry,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -69,7 +72,9 @@ async def log_weight(
 
 
 @router.get("/weight")
+@limiter.limit("100/minute")
 async def get_weight_history(
+    request: Request,
     days: int = 30,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -91,7 +96,9 @@ async def get_weight_history(
 
 # I handle workout logging
 @router.post("/workout")
+@limiter.limit("30/minute")
 async def log_workout(
+    request: Request,
     entry: WorkoutEntry,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -123,7 +130,9 @@ async def log_workout(
 
 
 @router.get("/workouts")
+@limiter.limit("100/minute")
 async def get_workout_history(
+    request: Request,
     days: int = 30,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -161,7 +170,9 @@ async def get_workout_history(
 
 # I handle the daily dashboard snapshot
 @router.get("/dashboard")
+@limiter.limit("60/minute")
 async def get_dashboard(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -245,7 +256,9 @@ async def get_dashboard(
 
 
 @router.get("/adherence")
+@limiter.limit("60/minute")
 async def get_meal_adherence(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):

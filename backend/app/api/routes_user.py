@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Any, List, Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.models.user import User
 
 router = APIRouter(prefix="/user", tags=["user"])
@@ -55,7 +56,9 @@ def _normalize_gender(value: Optional[str]) -> Optional[str]:
 
 
 @router.get("/profile")
+@limiter.limit("100/minute")
 async def get_profile(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -87,7 +90,9 @@ async def get_profile(
 
 
 @router.put("/profile")
+@limiter.limit("30/minute")
 async def update_profile(
+    request: Request,
     body: UserProfileUpdate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -117,7 +122,9 @@ async def update_profile(
 
 
 @router.get("/supplements")
+@limiter.limit("100/minute")
 async def get_supplements(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -130,7 +137,9 @@ async def get_supplements(
 
 
 @router.put("/supplements")
+@limiter.limit("30/minute")
 async def update_supplements(
+    request: Request,
     body: List[SupplementItem],
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
