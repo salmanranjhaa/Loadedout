@@ -68,6 +68,112 @@ function estimate1RM(weight, reps) {
   return Math.round(weight * (1 + reps / 30));
 }
 
+// ── Focusable set input ───────────────────────────────────────────────────────
+function SetInput({ value, onChange, placeholder, inputMode = "decimal", color, min, max }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <input
+      type="number"
+      inputMode={inputMode}
+      placeholder={placeholder}
+      value={value}
+      min={min}
+      max={max}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        width: "100%",
+        height: 44,
+        background: focused ? T.elevated2 : T.elevated,
+        border: `1.5px solid ${focused ? T.teal : T.border}`,
+        borderRadius: 10,
+        color: color || T.text,
+        fontSize: 16,
+        fontFamily: T.fontMono,
+        fontWeight: 600,
+        textAlign: "center",
+        outline: "none",
+        padding: "0 4px",
+        boxSizing: "border-box",
+        cursor: "text",
+        transition: "border-color 0.15s, background 0.15s",
+      }}
+    />
+  );
+}
+
+function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "28px 44px 1fr 1fr 1fr 44px",
+      gap: 6,
+      alignItems: "center",
+      background: set.done ? `${T.teal}14` : set.isWarmup ? `${T.amber}0C` : "transparent",
+      borderRadius: 10,
+      padding: "4px 0",
+      transition: "background 0.15s",
+    }}>
+      {/* Set number */}
+      <div style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono, textAlign: "center", fontWeight: 600 }}>
+        {setIndex + 1}
+      </div>
+
+      {/* Warmup toggle */}
+      <button
+        onClick={() => onToggleWarmup(exIndex, setIndex)}
+        style={{
+          height: 44, width: "100%", background: set.isWarmup ? `${T.amber}33` : T.elevated,
+          border: `1.5px solid ${set.isWarmup ? T.amber : T.border}`,
+          borderRadius: 10, fontSize: 11, color: set.isWarmup ? T.amber : T.textDim,
+          cursor: "pointer", fontFamily: "inherit", fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s",
+        }}
+      >
+        W
+      </button>
+
+      <SetInput
+        value={set.weight_kg}
+        onChange={(v) => onUpdate(exIndex, setIndex, "weight_kg", v)}
+        placeholder="kg"
+        inputMode="decimal"
+      />
+      <SetInput
+        value={set.reps}
+        onChange={(v) => onUpdate(exIndex, setIndex, "reps", v)}
+        placeholder="—"
+        inputMode="numeric"
+      />
+      <SetInput
+        value={set.rpe}
+        onChange={(v) => onUpdate(exIndex, setIndex, "rpe", v)}
+        placeholder="—"
+        inputMode="numeric"
+        min={1}
+        max={10}
+        color={set.rpe ? T.amber : undefined}
+      />
+
+      {/* Done button */}
+      <button
+        onClick={() => onToggleDone(exIndex, setIndex)}
+        style={{
+          height: 44, width: 44, borderRadius: 10,
+          background: set.done ? T.teal : T.elevated,
+          border: `1.5px solid ${set.done ? T.teal : T.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", padding: 0, flexShrink: 0, transition: "all 0.15s",
+        }}
+      >
+        <Icon name="check" size={16} color={set.done ? "#0A0A0F" : T.textDim} />
+      </button>
+    </div>
+  );
+}
+
 // ── Post-workout summary screen ───────────────────────────────────────────────
 function WorkoutSummary({ workout, onClose }) {
   const totalSets   = workout.exercises.reduce((s, e) => s + e.sets.length, 0);
@@ -445,60 +551,32 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
               )}
 
               {/* Sets */}
-              <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Column headers */}
-                <div style={{ display: "grid", gridTemplateColumns: "26px 40px 1fr 1fr 1fr 36px", gap: 6, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>
-                  {["", "W", "kg", "Reps", "RPE", ""].map((h, i) => (
-                    <div key={i} style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 600, textAlign: "center" }}>{h}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "28px 44px 1fr 1fr 1fr 44px", gap: 6, paddingBottom: 6 }}>
+                  {[" ", "W", "KG", "REPS", "RPE", ""].map((h, i) => (
+                    <div key={i} style={{ fontSize: 10, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, textAlign: "center" }}>{h}</div>
                   ))}
                 </div>
 
                 {ex.sets.map((set, setIndex) => (
-                  <div
+                  <SetRow
                     key={setIndex}
-                    style={{ display: "grid", gridTemplateColumns: "26px 40px 1fr 1fr 1fr 36px", gap: 6, alignItems: "center", background: set.done ? T.teal + "11" : set.isWarmup ? T.amber + "0A" : T.elevated, borderRadius: 8, padding: "6px 8px", border: `1px solid ${set.done ? T.teal + "44" : set.isWarmup ? T.amber + "33" : T.border}` }}
-                  >
-                    <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, textAlign: "center" }}>{setIndex + 1}</span>
-
-                    {/* Warmup toggle */}
-                    <button
-                      onClick={() => updateSet(exIndex, setIndex, "isWarmup", !set.isWarmup)}
-                      title={set.isWarmup ? "Warmup set" : "Mark as warmup"}
-                      style={{ height: 28, background: set.isWarmup ? T.amber + "33" : T.elevated2, border: `1px solid ${set.isWarmup ? T.amber + "66" : T.border}`, borderRadius: 6, fontSize: 9, color: set.isWarmup ? T.amber : T.textDim, cursor: "pointer", fontFamily: "inherit", fontWeight: set.isWarmup ? 700 : 400 }}
-                    >
-                      {set.isWarmup ? "W" : "W"}
-                    </button>
-
-                    <input
-                      type="number" inputMode="decimal" placeholder="kg" value={set.weight_kg}
-                      onChange={(e) => updateSet(exIndex, setIndex, "weight_kg", e.target.value)}
-                      style={{ background: "transparent", border: "none", color: T.text, fontSize: 14, fontFamily: T.fontMono, textAlign: "center", outline: "none", width: "100%", padding: "4px 0" }}
-                    />
-                    <input
-                      type="number" inputMode="numeric" placeholder="reps" value={set.reps}
-                      onChange={(e) => updateSet(exIndex, setIndex, "reps", e.target.value)}
-                      style={{ background: "transparent", border: "none", color: T.text, fontSize: 14, fontFamily: T.fontMono, textAlign: "center", outline: "none", width: "100%", padding: "4px 0" }}
-                    />
-                    <input
-                      type="number" inputMode="numeric" placeholder="—" min={1} max={10} value={set.rpe}
-                      onChange={(e) => updateSet(exIndex, setIndex, "rpe", e.target.value)}
-                      style={{ background: "transparent", border: "none", color: set.rpe ? T.amber : T.textDim, fontSize: 13, fontFamily: T.fontMono, textAlign: "center", outline: "none", width: "100%", padding: "4px 0" }}
-                    />
-                    <button
-                      onClick={() => toggleSetDone(exIndex, setIndex)}
-                      style={{ width: 32, height: 32, borderRadius: 8, background: set.done ? T.teal : T.elevated2, border: `1px solid ${set.done ? T.teal : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
-                    >
-                      <Icon name="check" size={14} color={set.done ? "#0A0A0F" : T.textDim} />
-                    </button>
-                  </div>
+                    set={set}
+                    setIndex={setIndex}
+                    exIndex={exIndex}
+                    onUpdate={updateSet}
+                    onToggleDone={toggleSetDone}
+                    onToggleWarmup={(ei, si) => updateSet(ei, si, "isWarmup", !set.isWarmup)}
+                  />
                 ))}
 
                 {/* Add set */}
                 <button
                   onClick={() => addSet(exIndex)}
-                  style={{ marginTop: 2, padding: "7px 0", background: "none", border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textDim, fontSize: 11, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                  style={{ marginTop: 2, padding: "11px 0", background: "none", border: `1px dashed ${T.border}`, borderRadius: 10, color: T.textDim, fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
                 >
-                  <Icon name="plus" size={11} /> Add Set
+                  <Icon name="plus" size={12} /> Add Set
                 </button>
               </div>
             </div>
