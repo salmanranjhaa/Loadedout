@@ -7,6 +7,7 @@ import { Icon } from "./design/icons";
 import LoginPage from "./pages/LoginPage";
 import ProfileDrawer from "./pages/ProfileDrawer";
 import FullProfilePage from "./pages/FullProfilePage";
+import Onboarding from "./components/Onboarding";
 
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 const MealsPage = lazy(() => import("./pages/MealsPage"));
@@ -104,6 +105,7 @@ export default function App() {
   const [showFullProfile, setShowFullProfile] = useState(false);
   const [confetti, setConfetti]         = useState(false);
   const [notchTaps, setNotchTaps]       = useState(0);
+  const [onboardingDone, setOnboardingDone] = useState(() => !!localStorage.getItem("lo_onboarded"));
   const tapTimer = useRef(null);
 
   useEffect(() => {
@@ -172,6 +174,20 @@ export default function App() {
     );
   }
 
+  // First login with no targets set → run the onboarding wizard
+  if (profile && !profile.daily_calorie_target && !onboardingDone) {
+    return (
+      <Onboarding
+        profile={profile}
+        onComplete={async () => {
+          setOnboardingDone(true);
+          try { setProfile(await userAPI.getProfile()); } catch {}
+        }}
+        onSkip={() => setOnboardingDone(true)}
+      />
+    );
+  }
+
   const isAdmin = (profile?.role || "user") === "admin";
   const initials = profile?.full_name
     ? profile.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -232,7 +248,7 @@ export default function App() {
           transform: "translateX(-50%)",
           width: "100%",
           maxWidth: 430,
-          background: "rgba(10,10,15,0.88)",
+          background: "rgba(7,10,16,0.88)",
           backdropFilter: "blur(20px) saturate(180%)",
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderTop: `0.5px solid ${T.border}`,

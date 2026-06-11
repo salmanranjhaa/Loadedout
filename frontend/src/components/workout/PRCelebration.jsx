@@ -28,7 +28,7 @@ export default function PRCelebration({ exercise, weight, reps, onDone }) {
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(10,10,15,0.55)",
+          background: "rgba(7,10,16,0.55)",
           animation: "lo-fade-up 0.3s ease forwards",
         }}
       />

@@ -83,7 +83,7 @@ export default function TemplateDetailPage({ template = {}, onBack, onStart }) {
                 <div
                   key={label}
                   style={{
-                    flex: 1, background: `rgba(10,10,15,0.45)`,
+                    flex: 1, background: `rgba(7,10,16,0.45)`,
                     backdropFilter: "blur(8px)", borderRadius: 10,
                     padding: "8px 6px", textAlign: "center",
                     border: `1px solid rgba(255,255,255,0.08)`,

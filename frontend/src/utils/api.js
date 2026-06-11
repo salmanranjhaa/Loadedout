@@ -175,6 +175,16 @@ export const authAPI = {
       method: "POST",
       body: JSON.stringify({ id_token, mode }),
     }),
+  requestPasswordReset: (email) =>
+    request("/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token, new_password) =>
+    request("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    }),
 };
 
 export async function googleNativeSignIn() {
@@ -213,6 +223,7 @@ export const mealsAPI = {
   updateLog: (id, data) => request(`/meals/log/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteLog: (id) => request(`/meals/log/${id}`, { method: "DELETE" }),
   logManual: (data) => request("/meals/log-manual", { method: "POST", body: JSON.stringify(data) }),
+  photoEstimate: (data) => request("/meals/photo-estimate", { method: "POST", body: JSON.stringify(data) }),
   getToday: (date) => request(`/meals/today${date ? `?date=${date}` : ""}`),
   getHistory: (days) => request(`/meals/history?days=${days || 7}`),
 };
@@ -244,7 +255,58 @@ export const prAPI = {
 export const foodAPI = {
   search: (q, limit = 15) =>
     request(`/food/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  barcode: (code) => request(`/food/barcode/${encodeURIComponent(code)}`),
 };
+
+// Streams the chat reply via SSE. Calls onDelta(text), onAction(data); resolves
+// with the full text when done. Falls back to the caller on thrown errors.
+export async function streamChat(message, history, { onDelta, onAction } = {}) {
+  const token = getToken();
+  const d = new Date();
+  const clientDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const response = await fetch(`${API_BASE}/ai/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message, conversation_history: history, client_date: clientDate }),
+  });
+  if (!response.ok || !response.body) {
+    const err = new Error(`HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  let action = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop(); // keep incomplete event in buffer
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      let event;
+      try { event = JSON.parse(line.slice(6)); } catch { continue; }
+      if (event.type === "delta" && event.text) {
+        fullText += event.text;
+        onDelta?.(event.text, fullText);
+      } else if (event.type === "action" && event.data) {
+        action = event.data;
+        onAction?.(event.data);
+      } else if (event.type === "error") {
+        throw new Error(event.message || "Stream error");
+      }
+    }
+  }
+  return { text: fullText, action };
+}
 
 export const exerciseAPI = {
   list: (params = {}) => {

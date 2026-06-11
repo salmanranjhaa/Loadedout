@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Icon } from "../design/icons";
 import { T } from "../design/tokens";
 import { Chip, PageHeader, LoadingDots } from "../design/components";
-import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, userAPI, chatAPI } from "../utils/api";
+import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, userAPI, chatAPI, streamChat } from "../utils/api";
 import MarkdownRenderer from "../components/ai/MarkdownRenderer";
 import QuickActions from "../components/ai/QuickActions";
 import VoiceInput from "../components/ai/VoiceInput";
@@ -531,27 +531,6 @@ function WorkoutTemplateCard({ data, onSave, onDismiss }) {
   );
 }
 
-function StreamingMessage({ content }) {
-  const [displayed, setDisplayed] = useState("");
-  const indexRef = useRef(0);
-
-  useEffect(() => {
-    if (!content) return;
-    indexRef.current = 0;
-    setDisplayed("");
-    const interval = setInterval(() => {
-      indexRef.current += 1;
-      setDisplayed(content.slice(0, indexRef.current));
-      if (indexRef.current >= content.length) {
-        clearInterval(interval);
-      }
-    }, 12);
-    return () => clearInterval(interval);
-  }, [content]);
-
-  return <MarkdownRenderer text={displayed} />;
-}
-
 export default function ChatPage({ profile, onProfile }) {
   const [messages, setMessages] = useState(() => {
     try {
@@ -575,6 +554,12 @@ export default function ChatPage({ profile, onProfile }) {
     }
   }, [messages, loading]);
 
+  function actionFields(action) {
+    if (!action?.action_type) return {};
+    const { action_type, ...rest } = action;
+    return { actionType: action_type, actionData: rest };
+  }
+
   async function sendMessage(text) {
     if (!text.trim()) return;
     const userMsg = { role: "user", content: text.trim() };
@@ -582,40 +567,54 @@ export default function ChatPage({ profile, onProfile }) {
     setInput("");
     setLoading(true);
 
+    const history = messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+    const fullMessage = buildContext(profile) + "\n" + userMsg.content;
+
+    // Streaming path: live placeholder message grows with each delta
+    let placeholderAdded = false;
     try {
-      const history = messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
-      const context = buildContext(profile);
-      const response = await aiAPI.chat(context + "\n" + userMsg.content, history, "general");
-
-      let content = response?.reply || response?.message || "Sorry, I didn't catch that.";
-      let actionData = null;
-      let actionType = null;
-
-      try {
-        const parsed = JSON.parse(content);
-        if (parsed.action_type) {
-          // AI returned the action directly (no reply wrapper)
-          const { action_type, reply: innerReply, action_data, ...rest } = parsed;
-          actionType = action_type;
-          actionData = action_data || rest;
-          content = innerReply || "I've prepared the details below — review and tap **Save it** when ready.";
-        } else if (parsed.reply) {
-          // Wrapped format: {reply, action_type, action_data}
-          content = parsed.reply;
-          actionData = parsed.action_data;
-          actionType = parsed.action_type;
+      setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
+      placeholderAdded = true;
+      const { text: finalText, action } = await streamChat(fullMessage, history, {
+        onDelta: (_, full) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.streaming) next[next.length - 1] = { ...last, content: full };
+            return next;
+          });
+        },
+      });
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.streaming) {
+          next[next.length - 1] = {
+            role: "assistant",
+            content: finalText || "Sorry, I didn't catch that.",
+            ...actionFields(action),
+          };
         }
-      } catch {
-        // Not JSON, use as-is
-      }
-
-      const assistantMsg = { role: "assistant", content, actionData, actionType };
-      setMessages((prev) => [...prev, assistantMsg]);
+        return next;
+      });
     } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, something went wrong. Please try again." },
-      ]);
+      if (placeholderAdded) {
+        setMessages((prev) => (prev[prev.length - 1]?.streaming ? prev.slice(0, -1) : prev));
+      }
+      // Fall back to the non-streaming endpoint
+      try {
+        const response = await aiAPI.chat(fullMessage, history, "general");
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: response?.reply || "Sorry, I didn't catch that.",
+          ...actionFields(response?.structured_data),
+        }]);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "Sorry, something went wrong. Please try again." },
+        ]);
+      }
     }
     setLoading(false);
   }
@@ -696,8 +695,8 @@ export default function ChatPage({ profile, onProfile }) {
                   >
                     {isUser ? (
                       msg.content
-                    ) : i === messages.length - 1 && loading ? (
-                      <StreamingMessage content={msg.content} />
+                    ) : msg.streaming && !msg.content ? (
+                      <LoadingDots />
                     ) : (
                       <MarkdownRenderer text={msg.content} />
                     )}
@@ -748,7 +747,7 @@ export default function ChatPage({ profile, onProfile }) {
       <div
         style={{
           flexShrink: 0,
-          background: "rgba(10,10,15,0.95)",
+          background: "rgba(7,10,16,0.95)",
           backdropFilter: "blur(20px)",
           borderTop: `0.5px solid ${T.border}`,
           padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",

@@ -1,34 +1,36 @@
-// Loadedout v2 design tokens — single source of truth
+// Loadedout v3 design tokens — single source of truth
+// Blue-tinted dark base with softened accents: premium athletic feel
+// (Whoop/Linear lineage) instead of neon-on-pure-black.
 export const T = {
-  bg:           "#0A0A0F",
-  surface:      "#13131A",
-  elevated:     "#1C1C26",
-  elevated2:    "#22222E",
-  border:       "#2A2A38",
-  borderStrong: "#363648",
+  bg:           "#070A10",
+  surface:      "#0E1320",
+  elevated:     "#161D2D",
+  elevated2:    "#1D2638",
+  border:       "#26314A",
+  borderStrong: "#33415F",
 
-  text:     "#F4F4F8",
-  textMuted:"#8F8FA3",
-  textDim:  "#5A5A6B",
+  text:     "#EEF2F9",
+  textMuted:"#8C97AE",
+  textDim:  "#5B667D",
 
-  teal:      "#00E5C3",
-  tealDim:   "#0B8973",
-  amber:     "#F5A623",
-  amberDim:  "#8F6114",
-  violet:    "#7C5CFC",
-  violetDim: "#4A3896",
+  teal:      "#27E0B9",
+  tealDim:   "#11947A",
+  amber:     "#FFB454",
+  amberDim:  "#946218",
+  violet:    "#8E7BFF",
+  violetDim: "#5847B0",
 
-  positive: "#00E5C3",
-  negative: "#FF5C72",
-  warning:  "#F5A623",
+  positive: "#27E0B9",
+  negative: "#FF647E",
+  warning:  "#FFB454",
 
-  catRoutine: "#8F8FA3",
-  catMeal:    "#F5A623",
-  catExercise:"#00E5C3",
-  catFocus:   "#7C5CFC",
-  catClass:   "#5C8FFC",
-  catSocial:  "#FC5C9E",
-  catWork:    "#FC8B5C",
+  catRoutine: "#8C97AE",
+  catMeal:    "#FFB454",
+  catExercise:"#27E0B9",
+  catFocus:   "#8E7BFF",
+  catClass:   "#6BA3FF",
+  catSocial:  "#FF6BB0",
+  catWork:    "#FF9466",
 
   rCard:  16,
   rInput: 12,
@@ -95,12 +97,12 @@ export const catColors = {
 
 // Muscle group colors for workout engine
 export const muscleColors = {
-  chest: "#FF5C72",
-  back: "#5C8FFC",
-  legs: "#00E5C3",
-  shoulders: "#F5A623",
-  arms: "#7C5CFC",
-  core: "#FC5C9E",
-  cardio: "#FC8B5C",
-  fullBody: "#8F8FA3",
+  chest: "#FF647E",
+  back: "#6BA3FF",
+  legs: "#27E0B9",
+  shoulders: "#FFB454",
+  arms: "#8E7BFF",
+  core: "#FF6BB0",
+  cardio: "#FF9466",
+  fullBody: "#8C97AE",
 };

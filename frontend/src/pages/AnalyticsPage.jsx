@@ -171,6 +171,130 @@ function PRTimeline({ prs }) {
   );
 }
 
+function ExerciseProgress({ workouts }) {
+  // Collect strength sessions that carry per-set details
+  const byExercise = useMemo(() => {
+    const map = {};
+    for (const w of workouts) {
+      const exercises = w.details?.exercises || w.exercises || [];
+      const dateStr = (w.date || w.loggedAt || "").slice(0, 10);
+      for (const ex of exercises) {
+        if (!ex?.name || !ex?.sets?.length) continue;
+        const top = Math.max(...ex.sets.map((s) => parseFloat(s.weight_kg) || 0));
+        if (top <= 0) continue;
+        (map[ex.name] = map[ex.name] || []).push({ date: dateStr, weight: top });
+      }
+    }
+    for (const name of Object.keys(map)) {
+      map[name].sort((a, b) => a.date.localeCompare(b.date));
+      if (map[name].length < 2) delete map[name];
+    }
+    return map;
+  }, [workouts]);
+
+  const names = Object.keys(byExercise).sort((a, b) => byExercise[b].length - byExercise[a].length);
+  const [selected, setSelected] = useState(null);
+  const active = selected && byExercise[selected] ? selected : names[0];
+
+  if (!active) {
+    return (
+      <div style={{ background: T.surface, border: `1px dashed ${T.border}`, borderRadius: T.rCard, padding: "20px 16px", margin: "0 20px 16px", textAlign: "center" }}>
+        <div style={{ fontSize: 13, color: T.textMuted }}>Finish a few gym sessions with logged sets to see strength progression here.</div>
+      </div>
+    );
+  }
+
+  const points = byExercise[active];
+  const W = 320, H = 110, PAD = 8;
+  const weightsOnly = points.map((p) => p.weight);
+  const min = Math.min(...weightsOnly), max = Math.max(...weightsOnly);
+  const span = max - min || 1;
+  const coords = points.map((p, i) => ({
+    x: PAD + (i / Math.max(points.length - 1, 1)) * (W - PAD * 2),
+    y: H - PAD - ((p.weight - min) / span) * (H - PAD * 2),
+  }));
+  const path = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  const first = points[0].weight, last = points[points.length - 1].weight;
+  const gain = last - first;
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, margin: "0 20px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Strength Progression</div>
+        <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, color: gain >= 0 ? T.teal : T.negative }}>
+          {gain >= 0 ? "+" : ""}{gain.toFixed(1)}kg
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", marginBottom: 12 }}>
+        {names.slice(0, 8).map((name) => (
+          <button key={name} onClick={() => setSelected(name)}
+            style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 9999, background: active === name ? T.teal : T.elevated, color: active === name ? "#0A0A0F" : T.textMuted, border: `1px solid ${active === name ? T.teal : T.border}`, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            {name}
+          </button>
+        ))}
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+        <path d={`${path} L${coords[coords.length - 1].x},${H - PAD} L${coords[0].x},${H - PAD} Z`} fill={`${T.teal}18`} stroke="none" />
+        <path d={path} fill="none" stroke={T.teal} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map((c, i) => (
+          <circle key={i} cx={c.x} cy={c.y} r={3} fill={T.surface} stroke={T.teal} strokeWidth={1.5}>
+            <title>{points[i].date}: {points[i].weight}kg</title>
+          </circle>
+        ))}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+        <span style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>{points[0].date.slice(5)} · {first}kg</span>
+        <span style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>{points[points.length - 1].date.slice(5)} · {last}kg</span>
+      </div>
+    </div>
+  );
+}
+
+function CalorieBalance({ history, workouts, calorieTarget }) {
+  const days = useMemo(() => {
+    const out = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const intake = history?.[iso]?.total_calories || 0;
+      const burned = workouts
+        .filter((w) => (w.date || w.loggedAt || "").slice(0, 10) === iso)
+        .reduce((s, w) => s + (w.calories || w.calories_burned_est || 0), 0);
+      out.push({ iso, intake, burned });
+    }
+    return out;
+  }, [history, workouts]);
+
+  const hasData = days.some((d) => d.intake > 0 || d.burned > 0);
+  if (!hasData) return null;
+
+  const maxVal = Math.max(...days.map((d) => Math.max(d.intake, d.burned)), calorieTarget || 0, 1);
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, margin: "0 20px 16px" }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 2 }}>Calorie Balance</div>
+      <div style={{ fontSize: 11, color: T.textDim, marginBottom: 12 }}>Intake vs estimated burn — last 14 days</div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 90 }}>
+        {days.map((d) => (
+          <div key={d.iso} style={{ flex: 1, display: "flex", gap: 1, alignItems: "flex-end", height: "100%" }} title={`${d.iso}: ${Math.round(d.intake)} in / ${Math.round(d.burned)} out`}>
+            <div style={{ flex: 1, height: `${(d.intake / maxVal) * 100}%`, minHeight: d.intake > 0 ? 3 : 1, background: T.amber, borderRadius: 2, opacity: 0.9 }} />
+            <div style={{ flex: 1, height: `${(d.burned / maxVal) * 100}%`, minHeight: d.burned > 0 ? 3 : 1, background: T.teal, borderRadius: 2, opacity: 0.9 }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+        <span style={{ fontSize: 10, color: T.textMuted, display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: T.amber, display: "inline-block" }} /> Intake
+        </span>
+        <span style={{ fontSize: 10, color: T.textMuted, display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: T.teal, display: "inline-block" }} /> Burned (exercise)
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function WeeklySummary({ dashboard, profile }) {
   const workouts   = dashboard?.fitness_this_week?.workouts    || 0;
   const minutes    = dashboard?.fitness_this_week?.total_minutes || 0;
@@ -384,6 +508,7 @@ export default function AnalyticsPage({ profile, onProfile }) {
 
             <Heatmap workouts={allWorkouts} />
             <VolumeChart history={allWorkouts} />
+            <ExerciseProgress workouts={allWorkouts} />
           </>
         )}
 
@@ -394,10 +519,17 @@ export default function AnalyticsPage({ profile, onProfile }) {
         {loading ? (
           <SkeletonCard />
         ) : (
-          <NutritionAdherence
-            history={dashboard?.history || {}}
-            targets={{ calories: profile?.daily_calorie_target || 2400 }}
-          />
+          <>
+            <NutritionAdherence
+              history={dashboard?.history || {}}
+              targets={{ calories: profile?.daily_calorie_target || 2400 }}
+            />
+            <CalorieBalance
+              history={dashboard?.history || {}}
+              workouts={allWorkouts}
+              calorieTarget={profile?.daily_calorie_target}
+            />
+          </>
         )}
 
         {/* PRs */}

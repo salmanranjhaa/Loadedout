@@ -68,7 +68,7 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: "rgba(10,10,15,0.92)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(6px)" }}
+      style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: "rgba(7,10,16,0.92)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(6px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

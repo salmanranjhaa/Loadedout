@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     # WorkoutX Exercise API
     WORKOUTX_API_KEY: str = ""
 
+    # SMTP for password reset emails — reset flow degrades gracefully if unset
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@loadedout.online"
+    APP_PUBLIC_URL: str = "https://loadedout.online"
+
     # Google Calendar OAuth (web/server client — used for browser redirect flow)
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""

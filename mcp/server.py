@@ -684,6 +684,36 @@ async def list_tools() -> list[Tool]:
                 "required": ["user_email", "supplements"],
             },
         ),
+        Tool(
+            name="get_personal_records",
+            description="Get the user's strength personal records (PRs): exercise, weight, reps, date, estimated 1RM.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_email": {"type": "string"},
+                },
+                "required": ["user_email"],
+            },
+        ),
+        Tool(
+            name="upsert_personal_record",
+            description=(
+                "Record a strength PR for an exercise. Only updates if the new weight "
+                "beats the stored record for that exercise."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_email": {"type": "string"},
+                    "exercise_name": {"type": "string"},
+                    "weight_kg": {"description": "numeric"},
+                    "reps": {"description": "numeric"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["user_email", "exercise_name", "weight_kg", "reps"],
+            },
+        ),
     ]
 
 
@@ -795,6 +825,12 @@ async def _dispatch(name: str, args: dict, conn: asyncpg.Connection) -> Any:
 
     if name == "update_supplements":
         return await _update_supplements(conn, user_id, args)
+
+    if name == "get_personal_records":
+        return await _get_personal_records(conn, user_id)
+
+    if name == "upsert_personal_record":
+        return await _upsert_personal_record(conn, user_id, args)
 
     raise ValueError(f"Unknown tool: {name}")
 
@@ -1620,6 +1656,50 @@ async def _update_supplements(conn: asyncpg.Connection, user_id: int, args: dict
         json.dumps(supplements), user_id,
     )
     return {"status": "updated", "supplements": supplements}
+
+
+async def _get_personal_records(conn: asyncpg.Connection, user_id: int) -> dict:
+    rows = await conn.fetch(
+        """
+        SELECT exercise_name, weight_kg, reps, date, notes
+        FROM personal_records WHERE user_id = $1
+        ORDER BY weight_kg DESC
+        """,
+        user_id,
+    )
+    prs = []
+    for r in rows:
+        d = _serialize(r)
+        reps = r["reps"] or 1
+        d["estimated_1rm_kg"] = round(r["weight_kg"] * (1 + reps / 30)) if reps > 1 else r["weight_kg"]
+        prs.append(d)
+    return {"personal_records": prs, "total": len(prs)}
+
+
+async def _upsert_personal_record(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    pr_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
+    weight = _f(args["weight_kg"])
+    reps = _i(args["reps"])
+    existing = await conn.fetchrow(
+        "SELECT id, weight_kg FROM personal_records WHERE user_id=$1 AND exercise_name=$2",
+        user_id, args["exercise_name"],
+    )
+    if existing:
+        if weight <= existing["weight_kg"]:
+            return {"status": "kept_existing", "current_record_kg": existing["weight_kg"]}
+        await conn.execute(
+            "UPDATE personal_records SET weight_kg=$1, reps=$2, date=$3, notes=COALESCE($4, notes) WHERE id=$5",
+            weight, reps, pr_date, args.get("notes"), existing["id"],
+        )
+        return {"status": "updated", "exercise_name": args["exercise_name"], "weight_kg": weight, "reps": reps}
+    await conn.execute(
+        """
+        INSERT INTO personal_records (user_id, exercise_name, weight_kg, reps, date, notes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        user_id, args["exercise_name"], weight, reps, pr_date, args.get("notes"),
+    )
+    return {"status": "created", "exercise_name": args["exercise_name"], "weight_kg": weight, "reps": reps}
 
 
 # ---- Starlette ASGI app with SSE transport ----

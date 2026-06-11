@@ -11,7 +11,7 @@ from app.core.limiter import limiter
 from app.models.analytics import WeightLog, WorkoutLog, DailySnapshot
 from app.models.meal import MealLog
 from app.models.budget import BudgetEntry
-from app.services.rag import embed_and_store_workout
+from app.services.rag import schedule_workout_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ async def log_workout(
     await db.commit()
     await db.refresh(log)
     
-    await embed_and_store_workout(log, db)
+    schedule_workout_embedding(log.id)
     
     return {
         "id": log.id,

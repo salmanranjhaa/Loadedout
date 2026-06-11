@@ -11,7 +11,7 @@ from app.core.limiter import limiter
 from app.models.analytics import WorkoutLog, WorkoutTemplate
 from app.models.fitness import PersonalRecord
 from app.models.user import User
-from app.services.rag import embed_and_store_workout
+from app.services.rag import schedule_workout_embedding
 from app.services.vertex_ai import analyze_workout
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ async def save_workout(
     db.add(log)
     await db.commit()
     await db.refresh(log)
-    await embed_and_store_workout(log, db)
+    schedule_workout_embedding(log.id)
 
     return {
         "id": log.id,

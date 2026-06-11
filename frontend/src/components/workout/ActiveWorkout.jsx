@@ -638,7 +638,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       {/* PR Celebration */}
       {celebration && (
         <div
-          style={{ position: "fixed", inset: 0, zIndex: T.z.confetti, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,10,15,0.7)", backdropFilter: "blur(4px)", animation: "lo-fade-up 0.3s ease" }}
+          style={{ position: "fixed", inset: 0, zIndex: T.z.confetti, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(7,10,16,0.7)", backdropFilter: "blur(4px)", animation: "lo-fade-up 0.3s ease" }}
           onClick={() => setCelebration(null)}
         >
           <div style={{ background: T.surface, border: `1px solid ${T.teal}44`, borderRadius: T.rCard, padding: "32px 28px", textAlign: "center", maxWidth: 280, boxShadow: `0 0 40px ${T.teal}33` }}>

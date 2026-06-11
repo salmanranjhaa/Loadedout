@@ -313,6 +313,105 @@ async def refresh(
     return TokenResponse(**data)
 
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+def _send_reset_email_sync(to_email: str, reset_link: str) -> None:
+    import smtplib
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your LoadedOut password"
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+    msg.set_content(
+        "Someone requested a password reset for your LoadedOut account.\n\n"
+        f"Reset your password (link valid for 30 minutes):\n{reset_link}\n\n"
+        "If this wasn't you, you can ignore this email."
+    )
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+        server.starttls()
+        if settings.SMTP_USER:
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        server.send_message(msg)
+
+
+@router.post("/request-password-reset")
+@limiter.limit("3/minute")
+async def request_password_reset(
+    request: Request,
+    body: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """I email a short-lived reset link. Response never reveals whether the email exists."""
+    from datetime import datetime, timedelta, timezone
+    from jose import jwt as jose_jwt
+
+    generic = {"message": "If that email is registered, a reset link has been sent."}
+    email = body.email.strip().lower()
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        return generic
+
+    token = jose_jwt.encode(
+        {
+            "sub": str(user.id),
+            "type": "password_reset",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        },
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
+    reset_link = f"{settings.APP_PUBLIC_URL}/?reset_token={token}"
+
+    if settings.SMTP_HOST:
+        from starlette.concurrency import run_in_threadpool
+        try:
+            await run_in_threadpool(_send_reset_email_sync, user.email, reset_link)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Reset email send failed for user %s: %s", user.id, e)
+    else:
+        # No SMTP configured: log so the admin can hand the link to the user
+        import logging
+        logging.getLogger(__name__).warning(
+            "SMTP not configured — password reset link for user %s: %s", user.id, reset_link
+        )
+    return generic
+
+
+@router.post("/reset-password")
+@limiter.limit("5/minute")
+async def reset_password(
+    request: Request,
+    body: PasswordResetConfirm,
+    db: AsyncSession = Depends(get_db),
+):
+    """I set a new password from a valid reset token and revoke all sessions."""
+    from sqlalchemy import delete as sa_delete
+    from app.models.user import RefreshToken
+
+    payload = decode_token(body.token, expected_type="password_reset")
+    _validate_password_strength(body.new_password)
+
+    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reset token")
+
+    user.hashed_password = hash_password(body.new_password)
+    await db.execute(sa_delete(RefreshToken).where(RefreshToken.user_id == user.id))
+    await db.commit()
+    return {"message": "Password updated. You can now sign in."}
+
+
 @router.post("/google/id-token")
 @limiter.limit("5/minute")
 async def google_id_token_login(

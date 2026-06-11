@@ -54,6 +54,43 @@ def _normalize_product(product: dict) -> Optional[dict]:
     }
 
 
+@router.get("/barcode/{code}")
+@limiter.limit("30/minute")
+async def lookup_barcode(
+    request: Request,
+    code: str,
+    user: dict = Depends(get_current_user),
+):
+    """I look up a scanned barcode on Open Food Facts."""
+    code = code.strip()
+    if not code.isdigit() or not 6 <= len(code) <= 14:
+        return {"item": None, "error": "invalid_barcode"}
+
+    cached = _cache.get(f"bc:{code}")
+    if cached and time.monotonic() - cached[0] < _CACHE_TTL:
+        return {"item": cached[1]}
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"https://world.openfoodfacts.org/api/v2/product/{code}.json",
+                params={"fields": OFF_FIELDS},
+                headers={"User-Agent": "LoadedOut/1.0 (personal fitness app)"},
+            )
+            if resp.status_code == 404:
+                return {"item": None, "error": "not_found"}
+            resp.raise_for_status()
+            product = resp.json().get("product") or {}
+    except Exception as e:
+        logger.warning("Barcode lookup failed for %s: %s", code, e)
+        return {"item": None, "error": "lookup_failed"}
+
+    item = _normalize_product(product)
+    if item:
+        _cache[f"bc:{code}"] = (time.monotonic(), item)
+    return {"item": item, "error": None if item else "no_nutrition_data"}
+
+
 @router.get("/search")
 @limiter.limit("30/minute")
 async def search_food(

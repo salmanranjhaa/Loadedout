@@ -465,12 +465,270 @@ function RecentTab({ onSelect }) {
   );
 }
 
+// ── Tab 5: Photo (Gemini Vision) ──────────────────────────────────────────────
+function downscaleImage(file, maxDim = 1280) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      resolve(dataUrl.split(",")[1]); // strip data:image/jpeg;base64,
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function PhotoTab({ onSelect }) {
+  const [preview,  setPreview]  = useState(null);
+  const [base64,   setBase64]   = useState(null);
+  const [hint,     setHint]     = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [result,   setResult]   = useState(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setResult(null);
+    setPreview(URL.createObjectURL(file));
+    try {
+      setBase64(await downscaleImage(file));
+    } catch {
+      showToast("Couldn't read that image", "error");
+      setPreview(null);
+    }
+  }
+
+  async function handleEstimate() {
+    if (!base64) return;
+    setLoading(true);
+    try {
+      const r = await mealsAPI.photoEstimate({ image_base64: base64, mime_type: "image/jpeg", hint: hint || undefined });
+      const est = r?.estimated;
+      if (est && est.name !== "not food") {
+        setResult(est);
+      } else {
+        showToast(est?.name === "not food" ? "That doesn't look like food 🤔" : "Couldn't analyze the photo", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Photo analysis failed", "error");
+    }
+    setLoading(false);
+  }
+
+  function reset() {
+    setPreview(null); setBase64(null); setResult(null); setHint("");
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {!preview && (
+        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "32px 16px", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 14, cursor: "pointer" }}>
+          <Icon name="sparkle" size={26} color={T.teal} />
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Snap or upload your meal</div>
+          <div style={{ fontSize: 11, color: T.textMuted, textAlign: "center" }}>AI looks at the photo and estimates macros for the whole portion</div>
+          <input type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+        </label>
+      )}
+
+      {preview && (
+        <>
+          <div style={{ position: "relative" }}>
+            <img src={preview} alt="meal" style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 12, border: `1px solid ${T.border}` }} />
+            <button onClick={reset} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(7,10,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name="x" size={12} color={T.text} />
+            </button>
+          </div>
+
+          {!result && (
+            <>
+              <input
+                value={hint} onChange={(e) => setHint(e.target.value)}
+                placeholder="Optional hint, e.g. 'about 200g of rice'"
+                style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 12px", color: T.text, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+              />
+              <button
+                onClick={handleEstimate} disabled={loading || !base64}
+                style={{ padding: "12px 0", background: loading ? T.elevated : `linear-gradient(135deg,${T.teal},${T.violet})`, color: loading ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+              >
+                <Icon name="sparkle" size={15} color={loading ? T.textMuted : "#0A0A0F"} />
+                {loading ? "Analyzing photo…" : "Analyze with AI"}
+              </button>
+            </>
+          )}
+
+          {result && (
+            <div style={{ background: T.surface, border: `1px solid ${T.teal}44`, borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1 }}>{result.name}</span>
+                {result.confidence && (
+                  <Badge color={result.confidence === "high" ? T.teal : result.confidence === "medium" ? T.amber : T.negative} size="sm">
+                    {result.confidence} confidence
+                  </Badge>
+                )}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                {[["Kcal", result.calories, T.amber], ["Protein", `${result.protein_g}g`, T.teal], ["Carbs", `${result.carbs_g}g`, T.amber], ["Fat", `${result.fat_g}g`, T.textMuted]].map(([label, val, color]) => (
+                  <div key={label} style={{ background: T.elevated, borderRadius: 8, padding: "6px 4px", textAlign: "center" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color, fontFamily: T.fontMono }}>{val}</div>
+                    <div style={{ fontSize: 8, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 1 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              {result.ingredients?.length > 0 && (
+                <div style={{ fontSize: 11, color: T.textMuted }}>
+                  {result.ingredients.map((i) => `${i.amount ? i.amount + " " : ""}${i.name}`).join(" · ")}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setResult(null)} style={{ flex: 1, padding: "9px 0", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9, color: T.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  Retry
+                </button>
+                <button
+                  onClick={() => { onSelect({ name: result.name, calories: result.calories || 0, protein_g: result.protein_g || 0, carbs_g: result.carbs_g || 0, fat_g: result.fat_g || 0 }); reset(); }}
+                  style={{ flex: 2, padding: "9px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Log This Meal
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Tab 6: Barcode ────────────────────────────────────────────────────────────
+function BarcodeTab({ onSelect }) {
+  const [code,     setCode]     = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const canScan = typeof window !== "undefined" && "BarcodeDetector" in window;
+
+  async function lookup(barcode) {
+    if (!barcode) return;
+    setLoading(true);
+    try {
+      const r = await foodAPI.barcode(barcode);
+      if (r?.item) {
+        setSelected(r.item);
+      } else {
+        showToast(r?.error === "not_found" ? "Product not in the database" : "No nutrition data for this barcode", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Lookup failed", "error");
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (!scanning || !canScan) return;
+    let stream, raf, stopped = false;
+    const video = document.getElementById("lo-barcode-video");
+    const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const codes = await detector.detect(video);
+            if (codes.length > 0) {
+              setScanning(false);
+              setCode(codes[0].rawValue);
+              lookup(codes[0].rawValue);
+              return;
+            }
+          } catch {}
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {
+        showToast("Camera unavailable — type the barcode instead", "error");
+        setScanning(false);
+      }
+    })();
+
+    return () => {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [scanning, canScan]);
+
+  if (selected) {
+    return (
+      <PortionSelector
+        food={{ ...selected, name: selected.brand ? `${selected.name} (${selected.brand})` : selected.name }}
+        onBack={() => setSelected(null)}
+        onAdd={(food) => { onSelect(food); setSelected(null); setCode(""); }}
+      />
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {scanning ? (
+        <div style={{ position: "relative" }}>
+          <video id="lo-barcode-video" muted playsInline style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 12, background: "#000" }} />
+          <div style={{ position: "absolute", inset: "35% 12%", border: `2px solid ${T.teal}`, borderRadius: 8, pointerEvents: "none" }} />
+          <button onClick={() => setScanning(false)} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(7,10,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name="x" size={12} color={T.text} />
+          </button>
+        </div>
+      ) : (
+        canScan && (
+          <button
+            onClick={() => setScanning(true)}
+            style={{ padding: "14px 0", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 12, color: T.teal, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          >
+            <Icon name="search" size={15} color={T.teal} /> Scan Barcode with Camera
+          </button>
+        )
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+          onKeyDown={(e) => e.key === "Enter" && lookup(code)}
+          placeholder="Or type barcode digits…"
+          inputMode="numeric"
+          style={{ flex: 1, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 13, fontFamily: T.fontMono, outline: "none", boxSizing: "border-box" }}
+        />
+        <button
+          onClick={() => lookup(code)} disabled={loading || code.length < 6}
+          style={{ padding: "0 18px", background: loading || code.length < 6 ? T.elevated : T.teal, color: loading || code.length < 6 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          {loading ? "…" : "Look up"}
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: T.textDim, textAlign: "center" }}>
+        Powered by Open Food Facts — packaged foods worldwide
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 const TABS = [
-  { id: "database",  label: "Foods",     icon: "search" },
-  { id: "recent",    label: "Recent",    icon: "history" },
-  { id: "templates", label: "Templates", icon: "edit" },
-  { id: "ai",        label: "AI Estimate", icon: "sparkle" },
+  { id: "database",  label: "Foods",   icon: "search" },
+  { id: "photo",     label: "Photo",   icon: "sparkle" },
+  { id: "barcode",   label: "Barcode", icon: "pantry" },
+  { id: "recent",    label: "Recent",  icon: "history" },
+  { id: "templates", label: "Saved",   icon: "edit" },
+  { id: "ai",        label: "AI",      icon: "bolt" },
 ];
 
 export default function FoodSearch({ onSelect }) {
@@ -501,6 +759,8 @@ export default function FoodSearch({ onSelect }) {
 
       {/* Tab content */}
       {activeTab === "database"  && <DatabaseTab  onSelect={onSelect} />}
+      {activeTab === "photo"     && <PhotoTab     onSelect={onSelect} />}
+      {activeTab === "barcode"   && <BarcodeTab   onSelect={onSelect} />}
       {activeTab === "recent"    && <RecentTab    onSelect={onSelect} />}
       {activeTab === "templates" && <TemplatesTab onSelect={onSelect} />}
       {activeTab === "ai"        && <AIEstimateTab onSelect={onSelect} />}

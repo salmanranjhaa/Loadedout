@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
 from app.models.meal import MealTemplate, MealLog
-from app.services.rag import embed_and_store_meal
+from app.services.rag import schedule_meal_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -250,10 +250,49 @@ async def log_meal(
     await db.commit()
     await db.refresh(log)
     
-    # I embed the meal log for RAG in the background
-    await embed_and_store_meal(log, db)
-    
+    # Embedding happens in the background — logging never waits on Vertex
+    schedule_meal_embedding(log.id)
+
     return _format_log(log)
+
+
+class PhotoMealEntry(BaseModel):
+    """Base64 photo of a meal for Gemini Vision macro estimation."""
+    image_base64: str
+    mime_type: str = "image/jpeg"
+    meal_type: str = "lunch"
+    hint: Optional[str] = None
+
+
+@router.post("/photo-estimate")
+@limiter.limit("15/minute")
+async def estimate_meal_from_photo(
+    request: Request,
+    entry: PhotoMealEntry,
+    _user: dict = Depends(get_current_user),
+):
+    """I estimate macros from a meal photo. The user confirms before logging."""
+    import base64
+    from app.services.vertex_ai import estimate_macros_from_image
+
+    if entry.mime_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+    try:
+        image_bytes = base64.b64decode(entry.image_base64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image data")
+    if len(image_bytes) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image too large (max 8MB)")
+
+    estimation = await estimate_macros_from_image(image_bytes, entry.mime_type, entry.hint or "")
+    if "error" in estimation:
+        raise HTTPException(status_code=422, detail=estimation["error"])
+
+    return {
+        "estimated": estimation,
+        "meal_type": entry.meal_type,
+        "status": "pending_confirmation",
+    }
 
 
 @router.post("/log-manual")

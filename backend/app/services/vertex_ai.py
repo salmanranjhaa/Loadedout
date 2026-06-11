@@ -226,6 +226,7 @@ async def generate_content_with_fallback(
     contents,
     config: types.GenerateContentConfig,
     preferred_model: str | None = None,
+    allow_groq: bool = True,
 ):
     """I try model/region fallbacks so transient model availability issues do not hard-fail."""
     errors = []
@@ -243,7 +244,7 @@ async def generate_content_with_fallback(
                         config=config,
                     )
                     text = _response_text(response)
-                    if not text:
+                    if not text and not _extract_function_call(response):
                         diag = _response_diagnostics(response)
                         raise RuntimeError(f"Empty model response ({diag})")
                     if region != settings.GCP_REGION or model_name != (preferred_model or settings.VERTEX_AI_MODEL):
@@ -269,7 +270,7 @@ async def generate_content_with_fallback(
                     errors.append(f"{region}/{model_name}: {type(e).__name__}")
                     break
 
-    groq_enabled = settings.ENABLE_GROQ_FALLBACK and bool((settings.GROQ_API_KEY or "").strip())
+    groq_enabled = allow_groq and settings.ENABLE_GROQ_FALLBACK and bool((settings.GROQ_API_KEY or "").strip())
     if groq_enabled:
         for model_name in _candidate_groq_models():
             for attempt in (1, 2):
@@ -325,43 +326,121 @@ PERSONALIZATION RULES:
 6. Keep responses clear and practical with inline macros where useful (for example: "~350 kcal, 40g protein, 25g carbs, 10g fat").
 
 ACTION RULES:
-1. Do NOT output JSON unless the user explicitly confirms a save/add action ("save this", "add it", "yes", "save that meal", "add to my meals", "save this workout", "add to schedule", etc.).
-2. When saving a meal, respond with ONLY this JSON:
-{{
-  "action_type": "save_meal_template",
-  "name": "Meal Name",
-  "meal_type": "breakfast|lunch|dinner|snack",
-  "calories": 350,
-  "protein_g": 40,
-  "carbs_g": 25,
-  "fat_g": 10,
-  "ingredients": [{{"name": "item", "amount": "150g", "calories": 165, "protein": 31}}],
-  "prep_instructions": "brief instructions"
-}}
-3. When adding a schedule event, respond with ONLY this JSON:
-{{
-  "action_type": "add_schedule_event",
-  "title": "Event Title",
-  "event_type": "routine|meal|exercise|focus|class|social|work",
-  "day_of_week": 0,
-  "start_time": "07:00",
-  "end_time": "08:00",
-  "reasoning": "why this fits the routine"
-}}
-4. When saving a workout template, respond with ONLY this JSON:
-{{
-  "action_type": "save_workout_template",
-  "name": "Workout Name",
-  "workout_type": "strength|crossfit|running|hiit|yoga|cycling|football|boxing|swimming",
-  "exercises": [
-    {{"name": "Exercise Name", "sets": 4, "reps": "8-10", "weight_suggestion_kg": 60, "notes": "optional tip"}}
-  ],
-  "description": "Brief overall description of the workout",
-  "estimated_duration": 60,
-  "tags": ["chest", "strength", "hypertrophy"]
-}}
-For cardio/CrossFit templates where set counts are not meaningful, use null for sets and describe reps using rounds/time.
+1. You have tools to save meals, workout templates, and schedule events.
+2. Call a tool ONLY when the user clearly confirms a save/add action ("save this",
+   "add it", "yes save it", "log that meal", "add to my schedule", etc.) or
+   explicitly asks you to log/save something in their message.
+3. When you call a tool, also write one short friendly sentence confirming what
+   you prepared (the app shows the user an editable card to approve).
+4. Never call a tool just because you suggested a meal/workout — wait for confirmation.
+5. For cardio/CrossFit templates where set counts are not meaningful, use null
+   for sets and describe reps using rounds/time.
 """
+
+
+# ── Native function calling for save/add actions ─────────────────────────────
+# The frontend renders an editable confirmation card per action_type, so tools
+# only PREPARE payloads — nothing is written until the user approves in the UI.
+def _build_action_tools() -> list:
+    return [types.Tool(function_declarations=[
+        types.FunctionDeclaration(
+            name="save_meal_template",
+            description="Prepare a meal to be logged today and saved as a reusable template. Call only after the user confirms saving a discussed meal.",
+            parameters={
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "meal_type": {"type": "STRING", "enum": ["breakfast", "lunch", "dinner", "snack"]},
+                    "calories": {"type": "NUMBER"},
+                    "protein_g": {"type": "NUMBER"},
+                    "carbs_g": {"type": "NUMBER"},
+                    "fat_g": {"type": "NUMBER"},
+                    "ingredients": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "name": {"type": "STRING"},
+                                "amount": {"type": "STRING"},
+                            },
+                        },
+                    },
+                    "prep_instructions": {"type": "STRING"},
+                },
+                "required": ["name", "meal_type", "calories", "protein_g"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="save_workout_template",
+            description="Prepare a workout template to save for reuse. Call only after the user confirms saving a discussed workout.",
+            parameters={
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "workout_type": {"type": "STRING", "enum": ["strength", "crossfit", "running", "hiit", "yoga", "cycling", "football", "boxing", "swimming"]},
+                    "exercises": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "name": {"type": "STRING"},
+                                "sets": {"type": "INTEGER", "nullable": True},
+                                "reps": {"type": "STRING"},
+                                "weight_suggestion_kg": {"type": "NUMBER", "nullable": True},
+                                "notes": {"type": "STRING"},
+                            },
+                            "required": ["name"],
+                        },
+                    },
+                    "description": {"type": "STRING"},
+                    "estimated_duration": {"type": "INTEGER"},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+                },
+                "required": ["name", "workout_type", "exercises"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="add_schedule_event",
+            description="Prepare a recurring weekly schedule event. Call only after the user confirms adding it. day_of_week: 0=Monday … 6=Sunday. Times are HH:MM 24h.",
+            parameters={
+                "type": "OBJECT",
+                "properties": {
+                    "title": {"type": "STRING"},
+                    "event_type": {"type": "STRING", "enum": ["routine", "meal", "exercise", "focus", "class", "social", "work"]},
+                    "day_of_week": {"type": "INTEGER"},
+                    "start_time": {"type": "STRING"},
+                    "end_time": {"type": "STRING"},
+                    "reasoning": {"type": "STRING"},
+                },
+                "required": ["title", "event_type", "day_of_week", "start_time", "end_time"],
+            },
+        ),
+    ])]
+
+
+def _jsonable(value):
+    """Function-call args arrive as proto maps/lists — convert to plain JSON types."""
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if hasattr(value, "items"):
+        return {k: _jsonable(v) for k, v in value.items()}
+    return value
+
+
+def _extract_function_call(response) -> dict | None:
+    try:
+        for candidate in getattr(response, "candidates", None) or []:
+            content = getattr(candidate, "content", None)
+            for part in (getattr(content, "parts", None) or []):
+                fc = getattr(part, "function_call", None)
+                if fc is not None and getattr(fc, "name", None):
+                    args = _jsonable(dict(fc.args)) if fc.args else {}
+                    return {"action_type": fc.name, **args}
+    except Exception:
+        pass
+    return None
 
 
 def _format_profile_metric(value, unit: str = "") -> str:
@@ -469,7 +548,12 @@ def _as_int(value, default: int) -> int:
 
 def _response_text(response) -> str:
     """I read model text from response.text, with candidate-part fallback."""
-    direct = getattr(response, "text", None)
+    try:
+        # .text is a property that RAISES if the response holds only a
+        # function_call part — treat that as "no text", not as a failure
+        direct = getattr(response, "text", None)
+    except Exception:
+        direct = None
     if direct:
         return direct.strip()
 
@@ -694,20 +778,32 @@ def _fallback_workout_analysis(
     }
 
 
-async def chat_with_ai(
-    message: str,
-    user_profile: dict,
-    conversation_history: list[dict] = None,
-    rag_context: str = "",
-) -> dict:
-    """I send a message to Gemini via the new google-genai SDK and return the response."""
-    if not settings.GCP_PROJECT_ID:
-        return {
-            "text": "AI chat is unavailable because GCP is not configured on the backend.",
-            "structured_data": None,
-        }
+def _build_chat_request(message, user_profile, conversation_history, rag_context):
+    """I build (system_instruction, contents, config) shared by sync and streaming chat."""
+    system_instruction = _format_system_prompt(user_profile)
 
-    system_instruction = SYSTEM_PROMPT.format(
+    contents = []
+    if conversation_history:
+        for msg in conversation_history:
+            role = "user" if msg.get("role") == "user" else "model"
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+
+    user_text = message
+    if rag_context:
+        user_text = f"CONTEXT FROM USER HISTORY:\n{rag_context}\n\nUSER MESSAGE:\n{message}"
+    contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0.7,
+        max_output_tokens=4096,
+        tools=_build_action_tools(),
+    )
+    return contents, config
+
+
+def _format_system_prompt(user_profile: dict) -> str:
+    return SYSTEM_PROMPT.format(
         username=user_profile.get("username", "there"),
         weight=_format_profile_metric(user_profile.get("current_weight_kg"), "kg"),
         target=_format_profile_metric(user_profile.get("target_weight_kg"), "kg"),
@@ -725,30 +821,26 @@ async def chat_with_ai(
         grocery_preferences=_format_profile_blob(user_profile.get("grocery_stores")),
     )
 
-    # I build the conversation contents list
-    contents = []
+async def chat_with_ai(
+    message: str,
+    user_profile: dict,
+    conversation_history: list[dict] = None,
+    rag_context: str = "",
+) -> dict:
+    """I send a message to Gemini (with action tools) and return text + any prepared action."""
+    if not settings.GCP_PROJECT_ID:
+        return {
+            "text": "AI chat is unavailable because GCP is not configured on the backend.",
+            "structured_data": None,
+        }
 
-    if conversation_history:
-        for msg in conversation_history:
-            role = "user" if msg.get("role") == "user" else "model"
-            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-
-    # I append RAG context to the final user message if available
-    user_text = message
-    if rag_context:
-        user_text = f"CONTEXT FROM USER HISTORY:\n{rag_context}\n\nUSER MESSAGE:\n{message}"
-
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
+    contents, config = _build_chat_request(message, user_profile, conversation_history, rag_context)
 
     try:
         response = await generate_content_with_fallback(
             contents=contents,
             preferred_model=settings.VERTEX_AI_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.7,
-                max_output_tokens=4096,
-            ),
+            config=config,
         )
     except Exception as e:
         logger.error(f"Chat generation failed: {e}")
@@ -758,28 +850,93 @@ async def chat_with_ai(
         }
 
     response_text = _response_text(response)
+    action = _extract_function_call(response)
+    if action:
+        return {
+            "text": response_text or "I've prepared the details below — review and save when ready.",
+            "structured_data": action,
+        }
     if not response_text:
         return {
             "text": "I couldn't generate a response right now. Please retry in a moment.",
             "structured_data": None,
         }
-    result = {"text": response_text, "structured_data": None}
 
+    result = {"text": response_text, "structured_data": None}
+    # Groq fallback has no tools — keep tolerating inline action JSON from it
     try:
-        if "{" in response_text and "}" in response_text:
-            json_start = response_text.index("{")
-            json_end = response_text.rindex("}") + 1
-            parsed = json.loads(response_text[json_start:json_end])
-            result["structured_data"] = parsed
-            # I strip the raw JSON block from the display text so it doesn't show in chat
-            before_json = response_text[:json_start].strip()
-            # Remove any trailing markdown code fence (```json or ```)
-            before_json = before_json.rstrip("`").rstrip("json").rstrip("`").strip()
-            result["text"] = before_json if before_json else ""
+        if response_text.lstrip().startswith("{") and '"action_type"' in response_text:
+            parsed = _parse_json_dict(response_text)
+            if parsed.get("action_type"):
+                result["structured_data"] = parsed
+                result["text"] = "I've prepared the details below — review and save when ready."
     except (json.JSONDecodeError, ValueError):
         pass
 
     return result
+
+
+async def chat_with_ai_stream(
+    message: str,
+    user_profile: dict,
+    conversation_history: list[dict] = None,
+    rag_context: str = "",
+):
+    """I stream the chat reply as events: {type: delta|action|done|error}.
+
+    Tries Vertex streaming across model/region candidates; if nothing has been
+    emitted yet, falls back to the non-streaming path (which includes Groq).
+    """
+    if not settings.GCP_PROJECT_ID:
+        yield {"type": "delta", "text": "AI chat is unavailable because GCP is not configured on the backend."}
+        yield {"type": "done"}
+        return
+
+    contents, config = _build_chat_request(message, user_profile, conversation_history, rag_context)
+
+    yielded_any = False
+    for region in _candidate_regions():
+        client = get_client(region)
+        for model_name in _candidate_models(settings.VERTEX_AI_MODEL):
+            full_text = ""
+            action = None
+            try:
+                stream = await client.aio.models.generate_content_stream(
+                    model=model_name,
+                    contents=contents,
+                    config=config,
+                )
+                async for chunk in stream:
+                    delta = _response_text(chunk)
+                    if delta:
+                        full_text += delta
+                        yielded_any = True
+                        yield {"type": "delta", "text": delta}
+                    fc = _extract_function_call(chunk)
+                    if fc:
+                        action = fc
+                if not full_text and not action:
+                    raise RuntimeError("empty stream")
+                if action:
+                    if not full_text:
+                        yield {"type": "delta", "text": "I've prepared the details below — review and save when ready."}
+                    yield {"type": "action", "data": action}
+                yield {"type": "done"}
+                return
+            except Exception as e:
+                logger.warning("Streaming chat failed model=%s region=%s: %s", model_name, region, e)
+                if yielded_any:
+                    # Can't cleanly retry after partial output — let the client keep what it has
+                    yield {"type": "error", "message": "Response was cut short. Please retry."}
+                    yield {"type": "done"}
+                    return
+
+    # No streaming candidate produced anything — non-streaming fallback (incl. Groq)
+    result = await chat_with_ai(message, user_profile, conversation_history, rag_context)
+    yield {"type": "delta", "text": result["text"]}
+    if result.get("structured_data"):
+        yield {"type": "action", "data": result["structured_data"]}
+    yield {"type": "done"}
 
 
 async def analyze_workout(
@@ -895,6 +1052,43 @@ type, duration, intensity, and metrics — do not reuse these placeholder descri
     except Exception as e:
         logger.error(f"Workout analysis failed: {e}")
         raise RuntimeError(f"AI Workout Analysis Enforced - Failed with error: {e}")
+
+
+async def estimate_macros_from_image(image_bytes: bytes, mime_type: str, hint: str = "") -> dict:
+    """I estimate meal macros from a photo using Gemini Vision."""
+    prompt = (
+        "You are a nutrition expert. Look at this photo of food and estimate what it is "
+        "and its complete nutritional content for the ENTIRE portion shown.\n"
+        + (f"User hint: {hint}\n" if hint else "")
+        + "Output ONLY a single compact JSON object on ONE LINE, no markdown:\n"
+        '{"name":"short dish name","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"fiber_g":0,'
+        '"confidence":"low|medium|high","ingredients":[{"name":"string","amount":"string"}]}\n'
+        "Use plain integers. If the image does not show food, use name \"not food\" and zeros."
+    )
+    contents = [
+        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+        types.Part(text=prompt),
+    ]
+
+    text = ""
+    try:
+        response = await generate_content_with_fallback(
+            contents=contents,
+            preferred_model=settings.VERTEX_AI_MODEL,
+            allow_groq=False,  # Groq fallback is text-only; never send image bytes there
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=2048,
+                response_mime_type="application/json",
+            ),
+        )
+        text = _response_text(response)
+        if not text:
+            return {"error": "Could not analyze the photo"}
+        return _parse_json_dict(text)
+    except Exception as e:
+        logger.error(f"Photo macro estimation failed: {e} | raw: {text[:200]}")
+        return {"error": "Could not analyze the photo"}
 
 
 async def calculate_macros_from_description(food_description: str) -> dict:
