@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      injectRegister: "auto",
+      injectRegister: null, // registered manually in main.jsx with a periodic update check
       manifest: {
         name: "Loadedout - Fitness & Lifestyle",
         short_name: "Loadedout",
@@ -27,6 +27,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Take over immediately on update and drop old precaches — without
+        // this an installed PWA can keep serving a stale bundle for days.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json}"],
         runtimeCaching: [
