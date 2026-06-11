@@ -15,7 +15,12 @@ from app.models.inventory import InventoryItem
 from app.models.schedule import ScheduleEvent
 from app.models.analytics import WorkoutLog, WeightLog
 from app.models.fitness import PersonalRecord
-from app.services.vertex_ai import chat_with_ai, chat_with_ai_stream, calculate_macros_from_description
+from app.services.vertex_ai import (
+    chat_with_ai,
+    chat_with_ai_stream,
+    calculate_macros_from_description,
+    suggest_workout_plan,
+)
 from app.services.rag import retrieve_relevant_context
 from app.core.limiter import limiter
 
@@ -28,6 +33,17 @@ class ChatMessage(BaseModel):
     conversation_history: Optional[list[dict]] = None
     context_type: Optional[str] = None
     # Client-local date so "today" matches the user's timezone, not UTC
+    client_date: Optional[str] = None
+
+
+class TemplateCandidate(BaseModel):
+    name: str
+    workout_type: Optional[str] = "strength"
+    exercises: Optional[list[str]] = None
+
+
+class WorkoutSuggestRequest(BaseModel):
+    templates: list[TemplateCandidate]
     client_date: Optional[str] = None
 
 
@@ -313,3 +329,56 @@ async def estimate_macros(
     """I estimate macros from a free text food description using Gemini."""
     result = await calculate_macros_from_description(description)
     return result
+
+
+@router.post("/suggest-workout")
+@limiter.limit("20/minute")
+async def suggest_workout(
+    request: Request,
+    body: WorkoutSuggestRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I ask the AI which of the user's templates fits best today, given their
+    recent training history, goals, and injuries. The frontend caches per day."""
+    if not body.templates:
+        raise HTTPException(status_code=400, detail="No templates provided")
+
+    profile_result = await db.execute(select(User).where(User.id == user["sub"]))
+    user_profile = profile_result.scalar_one_or_none()
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    today = _parse_client_date(body.client_date)
+    two_weeks_ago = today - timedelta(days=14)
+    workouts_result = await db.execute(
+        select(WorkoutLog)
+        .where(WorkoutLog.user_id == user_profile.id, WorkoutLog.date >= two_weeks_ago)
+        .order_by(WorkoutLog.date.desc())
+        .limit(10)
+    )
+    recent = []
+    for w in workouts_result.scalars().all():
+        desc = (w.notes or "")[:120]
+        details = w.details or {}
+        exercises = details.get("exercises") if isinstance(details, dict) else None
+        if exercises:
+            names = ", ".join(e.get("name", "?") for e in exercises[:6] if isinstance(e, dict))
+            desc = f"{desc} [{names}]".strip()
+        recent.append({
+            "date": w.date.isoformat() if w.date else None,
+            "workout_type": w.workout_type,
+            "description": desc,
+        })
+
+    try:
+        suggestion = await suggest_workout_plan(
+            user_profile=_profile_dict(user_profile),
+            recent_workouts=recent,
+            templates=[t.model_dump() for t in body.templates],
+            today=today.isoformat(),
+        )
+    except Exception as e:
+        logger.warning(f"Workout suggestion failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail="AI suggestion unavailable")
+    return suggestion

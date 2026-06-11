@@ -336,6 +336,11 @@ export const aiAPI = {
     }),
   estimateMacros: (description) =>
     request(`/ai/estimate-macros?description=${encodeURIComponent(description)}`, { method: "POST" }),
+  suggestWorkout: (templates, clientDate) =>
+    request("/ai/suggest-workout", {
+      method: "POST",
+      body: JSON.stringify({ templates, client_date: clientDate }),
+    }),
 };
 
 export const userAPI = {

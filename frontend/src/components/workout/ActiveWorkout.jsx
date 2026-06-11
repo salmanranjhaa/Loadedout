@@ -91,6 +91,9 @@ function SetInput({ value, onChange, placeholder, inputMode = "decimal", color, 
       onBlur={() => setFocused(false)}
       style={{
         width: "100%",
+        // Grid items refuse to shrink below an input's intrinsic ~170px width
+        // without this — the row then overflows and gets clipped to nothing.
+        minWidth: 0,
         height: 44,
         background: focused ? T.elevated2 : T.elevated,
         border: `1.5px solid ${focused ? T.teal : T.border}`,
@@ -105,6 +108,9 @@ function SetInput({ value, onChange, placeholder, inputMode = "decimal", color, 
         boxSizing: "border-box",
         cursor: "text",
         transition: "border-color 0.15s, background 0.15s",
+        WebkitAppearance: "none",
+        MozAppearance: "textfield",
+        appearance: "textfield",
       }}
     />
   );

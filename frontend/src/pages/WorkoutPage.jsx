@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Chip, PageHeader, PageScroll, SectionHead, IllustratedEmptyState, SkeletonCard, Badge } from "../design/components";
-import { workoutAPI } from "../utils/api";
+import { workoutAPI, aiAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import ExerciseBrowser from "../components/workout/ExerciseBrowser";
 import ActiveWorkout from "../components/workout/ActiveWorkout";
@@ -115,25 +115,51 @@ const NEXT_MUSCLES = {
   Core: { muscles: ["Core", "Abs"],                  description: "Core strength" },
 };
 
-// ── Hero card (data-driven) ────────────────────────────────────────────────────
-function HeroCard({ onStart, onBrowse, workoutInsight }) {
+// Built-in program days resolved into startable templates
+function resolveLocalTemplates() {
+  return (exerciseData.templates || []).flatMap((tpl) =>
+    (tpl.days || []).map((day) => ({
+      name:         day.name,
+      workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
+      exercises:    (day.exercises || []).map((exId) => {
+        const ex = exerciseData.exercises.find((e) => e.id === exId);
+        return { name: ex?.name || exId };
+      }),
+    }))
+  );
+}
+
+// ── Hero card (AI-driven, heuristic fallback) ─────────────────────────────────
+function HeroCard({ onStart, onBrowse, workoutInsight, aiSuggestion, aiThinking }) {
   const insight = workoutInsight;
   const nextGroup  = insight?.nextGroup  || "Push";
   const daysSince  = insight?.daysSince;
   const info       = NEXT_MUSCLES[nextGroup] || NEXT_MUSCLES.Push;
   const freshnessStr = daysSince == null ? "" : daysSince === 0 ? "last session: today" : daysSince === 1 ? "last session: yesterday" : `last session: ${daysSince}d ago`;
 
+  const ai = aiSuggestion;
+  const isRest = ai?.is_rest_day;
+  const title = ai ? (isRest ? "Rest Day" : ai.template_name) : `${nextGroup} Day`;
+  const subtitle = ai
+    ? ai.reason
+    : `${info.description} · ${info.muscles.join(", ")}`;
+  const tag = ai ? (isRest ? "AI Coach · Recovery" : `AI Pick · ${ai.focus || "Today"}`) : insight ? "Suggested next" : "Quick start";
+
   return (
     <div style={{ margin: "0 20px 20px", borderRadius: T.rCard, background: `linear-gradient(135deg,${T.teal}1A,${T.violet}33)`, border: `1px solid ${T.teal}33`, padding: 20, position: "relative", overflow: "hidden" }}>
       <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: `radial-gradient(circle,${T.violet}44,transparent 70%)`, pointerEvents: "none" }} />
-      <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.teal, letterSpacing: 1.4, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
-        {insight ? "Suggested next" : "Quick start"}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        {ai && <Icon name="sparkle" size={11} color={T.teal} />}
+        <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.teal, letterSpacing: 1.4, fontWeight: 700, textTransform: "uppercase" }}>
+          {tag}
+        </span>
+        {aiThinking && <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>· coach is thinking…</span>}
       </div>
       <div style={{ fontSize: 23, fontWeight: 800, color: T.text, letterSpacing: -0.6, marginBottom: 4, lineHeight: 1.15 }}>
-        {nextGroup} Day
+        {title}
       </div>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>
-        {info.description} · {info.muscles.join(", ")}
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4, lineHeight: 1.45 }}>
+        {subtitle}
       </div>
       {freshnessStr && (
         <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginBottom: 16 }}>{freshnessStr}</div>
@@ -141,7 +167,7 @@ function HeroCard({ onStart, onBrowse, workoutInsight }) {
       {!freshnessStr && <div style={{ marginBottom: 16 }} />}
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onStart} style={{ flex: 1, padding: "11px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-          {insight ? "Start Suggested" : "Quick Start"}
+          {isRest ? "Train Anyway" : ai ? "Start This" : insight ? "Start Suggested" : "Quick Start"}
         </button>
         <button onClick={onBrowse} style={{ flex: 1, padding: "11px 0", background: "transparent", color: T.text, border: `1px solid ${T.border}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Browse Templates</button>
       </div>
@@ -562,6 +588,10 @@ export default function WorkoutPage({ profile, onProfile }) {
   const [liveTemplate,    setLiveTemplate] = useState(null);
   const [sessionKey,      setSessionKey]   = useState(0);
   const [showExerciseDB,  setShowExDB]     = useState(false);
+  const [aiSuggestion,    setAiSuggestion] = useState(null);
+  const [aiThinking,      setAiThinking]   = useState(false);
+  const suggestionPool      = useRef([]);
+  const suggestionRequested = useRef(false);
 
   async function refresh() {
     try {
@@ -610,6 +640,56 @@ export default function WorkoutPage({ profile, onProfile }) {
 
   const workoutInsight = useMemo(() => analyzeWorkoutHistory(history), [history]);
 
+  // Ask the AI coach which template fits today (cached per day + template set)
+  useEffect(() => {
+    if (loading || suggestionRequested.current) return;
+    suggestionRequested.current = true;
+
+    const seen = new Set();
+    const candidates = [...templates, ...resolveLocalTemplates()].filter((t) => {
+      const key = (t.name || "").toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!candidates.length) return;
+    suggestionPool.current = candidates;
+
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const namesKey = candidates.map((c) => c.name).sort().join("|");
+    const CACHE_KEY = "lo_wk_suggestion_v1";
+    try {
+      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (cached && cached.date === today && cached.namesKey === namesKey) {
+        setAiSuggestion(cached.data);
+        return;
+      }
+    } catch {}
+
+    (async () => {
+      setAiThinking(true);
+      try {
+        const payload = candidates.map((c) => ({
+          name: c.name,
+          workout_type: c.workout_type || "strength",
+          exercises: (Array.isArray(c.exercises) ? c.exercises : [])
+            .slice(0, 8)
+            .map((e) => (typeof e === "string" ? e : e.name))
+            .filter(Boolean),
+        }));
+        const res = await aiAPI.suggestWorkout(payload, today);
+        if (res?.reason) {
+          setAiSuggestion(res);
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ date: today, namesKey, data: res }));
+        }
+      } catch {
+        // AI unavailable — the heuristic hero card still works
+      }
+      setAiThinking(false);
+    })();
+  }, [loading, templates]);
+
   // Real numbers from history — never invent streaks
   const { streakDays, weekCount } = useMemo(() => {
     const days = new Set(history.map((w) => (w.date || w.loggedAt || "").slice(0, 10)).filter(Boolean));
@@ -638,23 +718,20 @@ export default function WorkoutPage({ profile, onProfile }) {
   }
 
   function startSuggestedWorkout() {
-    const nextGroup = workoutInsight?.nextGroup || "Push";
+    // 1. AI pick wins when available (rest day → open an empty quick session)
+    if (aiSuggestion?.template_name) {
+      const aiMatch = suggestionPool.current.find(
+        (t) => (t.name || "").toLowerCase() === aiSuggestion.template_name.toLowerCase()
+      );
+      if (aiMatch) { startSession(aiMatch); return; }
+    }
+    if (aiSuggestion?.is_rest_day) { startSession(null); return; }
 
-    // 1. Try user's own API/custom templates first
+    // 2. Heuristic fallback: PPL rotation against own + built-in templates
+    const nextGroup = workoutInsight?.nextGroup || "Push";
     const apiMatch = templates.find((t) => (t.name || "").toLowerCase().includes(nextGroup.toLowerCase()));
     if (apiMatch) { startSession(apiMatch); return; }
-
-    // 2. Fall back to built-in local JSON templates
-    const localResolved = (exerciseData.templates || [])
-      .flatMap((tpl) => (tpl.days || []).map((day) => ({
-        name:         day.name,
-        workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
-        exercises:    (day.exercises || []).map((exId) => {
-          const ex = exerciseData.exercises.find((e) => e.id === exId);
-          return { name: ex?.name || exId };
-        }),
-      })));
-    const localMatch = localResolved.find((t) => t.name.toLowerCase().includes(nextGroup.toLowerCase()));
+    const localMatch = resolveLocalTemplates().find((t) => t.name.toLowerCase().includes(nextGroup.toLowerCase()));
     startSession(localMatch || null);
   }
 
@@ -667,6 +744,8 @@ export default function WorkoutPage({ profile, onProfile }) {
           onStart={startSuggestedWorkout}
           onBrowse={() => setShowBrowser(true)}
           workoutInsight={workoutInsight}
+          aiSuggestion={aiSuggestion}
+          aiThinking={aiThinking}
         />
         <MuscleRecencyWidget />
 

@@ -1063,6 +1063,89 @@ type, duration, intensity, and metrics — do not reuse these placeholder descri
         raise RuntimeError(f"AI Workout Analysis Enforced - Failed with error: {e}")
 
 
+async def suggest_workout_plan(
+    user_profile: dict,
+    recent_workouts: list[dict],
+    templates: list[dict],
+    today: str,
+) -> dict:
+    """I pick the best template for today from the user's available templates,
+    based on their goals, training preferences, and recent session history."""
+    if not settings.GCP_PROJECT_ID or not templates:
+        raise RuntimeError("AI suggestion unavailable")
+
+    tp = user_profile.get("training_preferences") or {}
+    profile_lines = []
+    if user_profile.get("fitness_goal"):
+        profile_lines.append(f"goal: {user_profile['fitness_goal']}")
+    if tp.get("days_per_week"):
+        profile_lines.append(f"trains {tp['days_per_week']}x/week")
+    if tp.get("injuries"):
+        profile_lines.append(f"injuries: {', '.join(tp['injuries'])}")
+    if tp.get("focus_sports"):
+        profile_lines.append(f"focus: {', '.join(tp['focus_sports'])}")
+    athlete = "; ".join(profile_lines) or "no stated preferences"
+
+    history_lines = [
+        f"- {w.get('date')}: {w.get('workout_type')} | {w.get('description') or 'no notes'}"
+        for w in recent_workouts[:10]
+    ] or ["- no workouts in the last 14 days"]
+
+    template_lines = [
+        f"{i + 1}. \"{t.get('name')}\" ({t.get('workout_type', 'strength')}): "
+        + (", ".join(t.get("exercises", [])[:8]) or "no exercise list")
+        for i, t in enumerate(templates[:25])
+    ]
+
+    prompt = f"""You are a strength & conditioning coach. Today is {today}.
+
+ATHLETE: {athlete}
+RECENT SESSIONS (newest first):
+{chr(10).join(history_lines)}
+
+AVAILABLE TEMPLATES:
+{chr(10).join(template_lines)}
+
+Pick the single best template for TODAY. Consider muscle-group recovery (avoid
+repeating what was just trained), weekly balance, the athlete's goal, and any
+injuries. If the athlete has trained hard several days in a row and clearly
+needs rest, recommend a rest day instead.
+
+Respond ONLY with valid JSON, no other text:
+{{
+  "template_name": <exact name from the list, or null if rest day>,
+  "is_rest_day": <true|false>,
+  "focus": <2-4 word label, e.g. "Pull day" or "Recovery">,
+  "reason": <one specific sentence, max 25 words, referencing their recent training>
+}}"""
+
+    response = await generate_content_with_fallback(
+        contents=prompt,
+        preferred_model=settings.VERTEX_AI_MODEL,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=1024,
+            response_mime_type="application/json",
+        ),
+    )
+    parsed = _parse_json_dict(_response_text(response))
+
+    # Only trust names that actually exist in the offered list
+    name = parsed.get("template_name")
+    valid_names = {t.get("name", "").strip().lower(): t.get("name") for t in templates}
+    matched = valid_names.get((name or "").strip().lower())
+    rest_day = bool(parsed.get("is_rest_day"))
+    if matched is None and not rest_day:
+        # Model invented a template name — don't present misleading advice
+        raise RuntimeError(f"AI suggested unknown template: {name!r}")
+    return {
+        "template_name": matched,
+        "is_rest_day": matched is None,
+        "focus": str(parsed.get("focus") or ("Recovery" if matched is None else "Training"))[:40],
+        "reason": str(parsed.get("reason") or "")[:200],
+    }
+
+
 async def estimate_macros_from_image(image_bytes: bytes, mime_type: str, hint: str = "") -> dict:
     """I estimate meal macros from a photo using Gemini Vision."""
     prompt = (
