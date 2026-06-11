@@ -9,7 +9,7 @@ import CategoryDetailPage from "./details/CategoryDetailPage";
 const EXPENSE_CATS = [
   { id: "food",      label: "Food",      color: T.amber,   icon: "meal"    },
   { id: "rent",      label: "Rent",      color: T.violet,  icon: "location" },
-  { id: "transport", label: "Transport", color: T.teal,    icon: "bike"    },
+  { id: "transport", label: "Transport", color: T.blue,    icon: "bike"    },
   { id: "fitness",   label: "Fitness",   color: "#5C8FFC", icon: "dumbbell" },
   { id: "fun",       label: "Fun",       color: "#FC5C9E", icon: "heart"   },
   { id: "other",     label: "Other",     color: "#FC8B5C", icon: "pill"    },
@@ -111,12 +111,12 @@ function SparklineSVG({ data }) {
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: "visible" }}>
       <defs>
         <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={T.teal} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={T.teal} stopOpacity="0" />
+          <stop offset="0%" stopColor={T.green} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={T.green} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={fill} fill="url(#spark-fill)" />
-      <path d={path} fill="none" stroke={T.teal} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path} fill="none" stroke={T.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -134,8 +134,8 @@ function WeekBarsChart({ bars, avg }) {
     <svg width={w} height={h + 20} viewBox={`0 0 ${w} ${h + 20}`}>
       <defs>
         <linearGradient id="bar-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={T.teal} stopOpacity="0.9" />
-          <stop offset="100%" stopColor={T.teal} stopOpacity="0.3" />
+          <stop offset="0%" stopColor={T.green} stopOpacity="0.9" />
+          <stop offset="100%" stopColor={T.green} stopOpacity="0.3" />
         </linearGradient>
       </defs>
       {bars.map((v, i) => {
@@ -191,7 +191,7 @@ function AddEntrySheet({ onClose, onAdded }) {
     setSaving(false);
   }
 
-  const accentColor = isIncome ? T.teal : T.amber;
+  const accentColor = isIncome ? T.green : T.amber;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
@@ -431,7 +431,7 @@ export default function BudgetPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.amber} />
+      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} />
       {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} />}
       {selectedCategory && (
         <CategoryDetailPage

@@ -51,6 +51,30 @@ function ProxyGif({ exerciseId, name, size = "100%" }) {
   );
 }
 
+// ── Client-side guidance cache ───────────────────────────────────────────────
+// The backend caches LLM guidance in the DB, but without this every modal
+// open still costs a round-trip. 7-day TTL, ~50 entries.
+const GUIDANCE_CACHE_KEY = "lo_ex_guidance_v1";
+function readGuidanceCache(id) {
+  try {
+    const all = JSON.parse(localStorage.getItem(GUIDANCE_CACHE_KEY) || "{}");
+    const hit = all[id];
+    if (hit && Date.now() - hit.at < 7 * 86400 * 1000) return hit.data;
+  } catch {}
+  return null;
+}
+function writeGuidanceCache(id, data) {
+  try {
+    const all = JSON.parse(localStorage.getItem(GUIDANCE_CACHE_KEY) || "{}");
+    all[id] = { at: Date.now(), data };
+    const ids = Object.keys(all);
+    if (ids.length > 50) {
+      ids.sort((a, b) => all[a].at - all[b].at).slice(0, ids.length - 50).forEach((k) => delete all[k]);
+    }
+    localStorage.setItem(GUIDANCE_CACHE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
 // ── Exercise detail modal ────────────────────────────────────────────────────
 function ExerciseDetailModal({ exercise, onClose, onSelect }) {
   const [guidance, setGuidance]         = useState(null);
@@ -58,10 +82,16 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
 
   useEffect(() => {
     if (!exercise?.id) return;
+    const cached = readGuidanceCache(exercise.id);
+    if (cached) { setGuidance(cached); setLoading(false); return; }
     setGuidance(null);
     setLoading(true);
     exerciseAPI.get(exercise.id)
-      .then((data) => { setGuidance(data.llm_guidance); setLoading(false); })
+      .then((data) => {
+        setGuidance(data.llm_guidance);
+        if (data.llm_guidance) writeGuidanceCache(exercise.id, data.llm_guidance);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [exercise?.id]);
 
@@ -74,7 +104,7 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
     >
       <div
         className="ex-detail-scroll"
-        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
+        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px calc(84px + env(safe-area-inset-bottom, 0px))", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
       >
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 

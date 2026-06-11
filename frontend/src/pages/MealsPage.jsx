@@ -47,7 +47,7 @@ function WeekStrip({ history, calorieTarget, selectedDate, onSelectDate }) {
     <div style={{ display: "flex", gap: 4, alignItems: "flex-end", height: 56 }}>
       {slots.map(({ d, i, iso, pct, hasData, isSelected, isFuture }) => {
         const isToday = i === todayIdx;
-        const color = isSelected ? T.teal : hasData ? adherenceColor(pct) : T.border;
+        const color = isSelected ? T.amber : hasData ? adherenceColor(pct) : T.border;
         const barH = isSelected ? Math.max(pct * 36, 6) : Math.max(pct * 36, hasData ? 4 : 2);
         return (
           <div
@@ -64,7 +64,7 @@ function WeekStrip({ history, calorieTarget, selectedDate, onSelectDate }) {
                   borderRadius: 3,
                   opacity: isFuture ? 0.3 : isToday || isSelected ? 1 : 0.7,
                   transition: "all 0.25s ease",
-                  boxShadow: isSelected ? `0 0 8px ${T.teal}66` : undefined,
+                  boxShadow: isSelected ? `0 0 8px ${T.amber}66` : undefined,
                 }}
               />
             </div>
@@ -72,7 +72,7 @@ function WeekStrip({ history, calorieTarget, selectedDate, onSelectDate }) {
               style={{
                 fontSize: 9,
                 fontWeight: isToday || isSelected ? 700 : 500,
-                color: isSelected ? T.teal : isToday ? T.teal : T.textDim,
+                color: isSelected ? T.amber : isToday ? T.amber : T.textDim,
                 letterSpacing: 0.3,
                 fontFamily: T.fontMono,
               }}
@@ -124,8 +124,8 @@ function DayNav({ selectedDate, onNav }) {
               marginLeft: 6,
               fontSize: 9,
               fontWeight: 700,
-              color: T.teal,
-              background: `${T.teal}22`,
+              color: T.amber,
+              background: `${T.amber}22`,
               padding: "2px 6px",
               borderRadius: 6,
               verticalAlign: "middle",
@@ -169,8 +169,8 @@ function SupplementChip({ sup, checked, onToggle }) {
         gap: 6,
         padding: "6px 12px 6px 8px",
         borderRadius: 9999,
-        border: `1px solid ${checked ? T.teal : T.border}`,
-        background: checked ? `${T.teal}18` : T.elevated,
+        border: `1px solid ${checked ? T.amber : T.border}`,
+        background: checked ? `${T.amber}18` : T.elevated,
         cursor: "pointer",
         transition: "all 0.15s",
       }}
@@ -180,8 +180,8 @@ function SupplementChip({ sup, checked, onToggle }) {
           width: 16,
           height: 16,
           borderRadius: 9999,
-          border: `1.5px solid ${checked ? T.teal : T.textDim}`,
-          background: checked ? T.teal : "transparent",
+          border: `1.5px solid ${checked ? T.amber : T.textDim}`,
+          background: checked ? T.amber : "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -192,7 +192,7 @@ function SupplementChip({ sup, checked, onToggle }) {
         {checked && <Icon name="check" size={9} color="#0A0A0F" strokeWidth={2.5} />}
       </div>
       <div style={{ textAlign: "left" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: checked ? T.teal : T.text, whiteSpace: "nowrap" }}>{sup.name}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: checked ? T.amber : T.text, whiteSpace: "nowrap" }}>{sup.name}</div>
         {sup.dose && <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>{sup.dose}</div>}
       </div>
     </button>
@@ -618,7 +618,7 @@ export default function MealsPage({ profile, onProfile }) {
               gap: 6,
             }}
           >
-            <Icon name="sparkle" size={14} color={T.teal} />
+            <Icon name="sparkle" size={14} color={T.amber} />
             AI Recipe Importer
           </button>
         </div>
@@ -648,7 +648,7 @@ export default function MealsPage({ profile, onProfile }) {
                 style={{
                   marginTop: 8,
                   padding: "8px 16px",
-                  background: T.teal,
+                  background: T.amber,
                   color: "#0A0A0F",
                   border: "none",
                   borderRadius: 8,
@@ -722,7 +722,7 @@ export default function MealsPage({ profile, onProfile }) {
           )}
           {recipeResult && (
             <div style={{ background: T.elevated, border: `1px solid ${T.teal}44`, borderRadius: T.rCard, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.teal }}>Estimated Macros</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.amber }}>Estimated Macros</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
                   ["Calories", `${recipeResult.calories} kcal`, T.amber],
@@ -749,7 +749,7 @@ export default function MealsPage({ profile, onProfile }) {
                     <div style={{ display: "flex", gap: 6 }}>
                       {["breakfast", "lunch", "dinner", "snack"].map((mt) => (
                         <button key={mt} onClick={() => setRecipeMealType(mt)}
-                          style={{ flex: 1, padding: "5px 2px", borderRadius: 7, background: recipeMealType === mt ? T.teal : T.elevated, color: recipeMealType === mt ? "#0A0A0F" : T.text, border: `1px solid ${recipeMealType === mt ? T.teal : T.border}`, fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+                          style={{ flex: 1, padding: "5px 2px", borderRadius: 7, background: recipeMealType === mt ? T.amber : T.elevated, color: recipeMealType === mt ? "#0A0A0F" : T.text, border: `1px solid ${recipeMealType === mt ? T.amber : T.border}`, fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
                           {mt}
                         </button>
                       ))}
@@ -762,7 +762,7 @@ export default function MealsPage({ profile, onProfile }) {
                       setRecipeResult(null);
                       setRecipeText("");
                     }}
-                    style={{ width: "100%", padding: "10px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                    style={{ width: "100%", padding: "10px 0", background: T.amber, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
                   >
                     Log Meal
                   </button>

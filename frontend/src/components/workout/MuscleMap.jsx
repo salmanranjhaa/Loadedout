@@ -17,25 +17,71 @@ function Region({ d, cx, cy, rx, ry, x, y, w, h, r = 6, lit, color }) {
   return <rect x={x} y={y} width={w} height={h} rx={r} fill={fill} stroke={stroke} strokeWidth="1" {...extra} />;
 }
 
-// Which figure regions light up for each muscle group
-const FRONT_MAP = {
-  chest:     ["chestL", "chestR"],
-  shoulders: ["deltL", "deltR"],
-  arms:      ["bicL", "bicR", "foreL", "foreR"],
-  core:      ["abs1", "abs2", "abs3"],
-  legs:      ["quadL", "quadR", "calfL", "calfR"],
-  cardio:    ["chestL", "chestR", "abs1", "abs2", "abs3", "quadL", "quadR"],
-  fullBody:  ["chestL", "chestR", "deltL", "deltR", "bicL", "bicR", "abs1", "abs2", "abs3", "quadL", "quadR"],
+// ── Muscle-name resolution ────────────────────────────────────────────────────
+// Exercise data arrives with anything from coarse groups ("legs") to specific
+// muscles ("quadriceps", "lats"); resolve every known spelling to figure
+// regions so the map is never blank.
+const R_FRONT = {
+  chest:    ["chestL", "chestR"],
+  delts:    ["deltL", "deltR"],
+  biceps:   ["bicL", "bicR"],
+  forearms: ["foreL", "foreR"],
+  abs:      ["abs1", "abs2", "abs3"],
+  quads:    ["quadL", "quadR"],
+  calves:   ["calfL", "calfR"],
 };
-const BACK_MAP = {
-  back:      ["traps", "latL", "latR"],
-  shoulders: ["rdeltL", "rdeltR"],
-  arms:      ["triL", "triR"],
-  legs:      ["gluteL", "gluteR", "hamL", "hamR", "bcalfL", "bcalfR"],
-  core:      ["lower"],
-  cardio:    ["latL", "latR", "hamL", "hamR"],
-  fullBody:  ["traps", "latL", "latR", "gluteL", "gluteR", "hamL", "hamR"],
+const R_BACK = {
+  delts:     ["rdeltL", "rdeltR"],
+  traps:     ["traps"],
+  lats:      ["latL", "latR"],
+  lowerback: ["lower"],
+  triceps:   ["triL", "triR"],
+  forearms:  ["bforeL", "bforeR"],
+  glutes:    ["gluteL", "gluteR"],
+  hams:      ["hamL", "hamR"],
+  calves:    ["bcalfL", "bcalfR"],
 };
+
+const TERMS = {
+  chest:        { color: "chest",     front: ["chest"],                    back: [] },
+  pecs:         "chest", pectorals: "chest",
+  shoulders:    { color: "shoulders", front: ["delts"],                    back: ["delts"] },
+  delts:        "shoulders", deltoids: "shoulders",
+  biceps:       { color: "arms",      front: ["biceps"],                   back: [] },
+  triceps:      { color: "arms",      front: [],                           back: ["triceps"] },
+  forearms:     { color: "arms",      front: ["forearms"],                 back: ["forearms"] },
+  arms:         { color: "arms",      front: ["biceps", "forearms"],       back: ["triceps"] },
+  "upper arms": "arms",
+  "lower arms": "forearms",
+  lats:         { color: "back",      front: [],                           back: ["lats"] },
+  "middle back": "lats",
+  traps:        { color: "back",      front: [],                           back: ["traps"] },
+  neck:         "traps",
+  "lower back": { color: "back",      front: [],                           back: ["lowerback"] },
+  back:         { color: "back",      front: [],                           back: ["traps", "lats", "lowerback"] },
+  abdominals:   { color: "core",      front: ["abs"],                      back: [] },
+  abs: "abdominals", core: "abdominals", obliques: "abdominals", waist: "abdominals",
+  quadriceps:   { color: "legs",      front: ["quads"],                    back: [] },
+  quads: "quadriceps",
+  hamstrings:   { color: "legs",      front: [],                           back: ["hams"] },
+  glutes:       { color: "legs",      front: [],                           back: ["glutes"] },
+  calves:       { color: "legs",      front: ["calves"],                   back: ["calves"] },
+  "lower legs": "calves",
+  abductors:    { color: "legs",      front: ["quads"],                    back: ["glutes"] },
+  adductors:    { color: "legs",      front: ["quads"],                    back: ["hams"] },
+  legs:         { color: "legs",      front: ["quads"],                    back: ["glutes", "hams"] },
+  "upper legs": "legs",
+  cardio:       { color: "cardio",    front: ["chest", "abs", "quads"],    back: ["hams"] },
+  fullbody:     { color: "fullBody",  front: ["chest", "delts", "biceps", "abs", "quads"], back: ["traps", "lats", "glutes", "hams"] },
+  "full body":  "fullbody",
+};
+
+function resolveTerm(raw) {
+  let t = (raw || "").toLowerCase().trim();
+  let entry = TERMS[t];
+  while (typeof entry === "string") entry = TERMS[entry];
+  return entry || null;
+}
 
 function Figure({ view, lit, color }) {
   const on = (id) => lit.get(id) || false;
@@ -79,8 +125,8 @@ function Figure({ view, lit, color }) {
           {R("latR", { d: "M75 56 h-13 v32 a4 4 0 0 0 4 4 l9 -14 a30 30 0 0 0 0 -22 z" })}
           {R("triL", { x: 28, y: 55, w: 11, h: 26, r: 5.5 })}
           {R("triR", { x: 81, y: 55, w: 11, h: 26, r: 5.5 })}
-          <rect x="26" y="84" width="10" height="26" rx="5" fill={DIM} stroke={DIM_STROKE} />
-          <rect x="84" y="84" width="10" height="26" rx="5" fill={DIM} stroke={DIM_STROKE} />
+          {R("bforeL", { x: 26, y: 84, w: 10, h: 26, r: 5 })}
+          {R("bforeR", { x: 84, y: 84, w: 10, h: 26, r: 5 })}
           {R("lower", { x: 50, y: 96, w: 20, h: 16, r: 5 })}
           {R("gluteL", { cx: 52, cy: 122, rx: 10, ry: 9 })}
           {R("gluteR", { cx: 68, cy: 122, rx: 10, ry: 9 })}
@@ -95,16 +141,22 @@ function Figure({ view, lit, color }) {
 }
 
 export default function MuscleMap({ primary, secondary = [] }) {
-  const color = muscleColors[primary] || T.teal;
   const front = new Map();
   const back  = new Map();
-  // Secondaries first so the primary level wins on shared regions
+  const apply = (entry, level) => {
+    entry.front.forEach((g) => (R_FRONT[g] || []).forEach((r) => { if (front.get(r) !== "primary") front.set(r, level); }));
+    entry.back.forEach((g) => (R_BACK[g] || []).forEach((r) => { if (back.get(r) !== "primary") back.set(r, level); }));
+  };
+
   for (const m of secondary) {
-    (FRONT_MAP[m] || []).forEach((r) => front.set(r, "secondary"));
-    (BACK_MAP[m] || []).forEach((r) => back.set(r, "secondary"));
+    const e = resolveTerm(m);
+    if (e) apply(e, "secondary");
   }
-  (FRONT_MAP[primary] || []).forEach((r) => front.set(r, "primary"));
-  (BACK_MAP[primary] || []).forEach((r) => back.set(r, "primary"));
+  // Unknown primary → light the full body dimly rather than showing nothing
+  const pe = resolveTerm(primary) || { ...((typeof TERMS.fullbody === "object" && TERMS.fullbody) || {}), color: "fullBody" };
+  apply(pe, resolveTerm(primary) ? "primary" : "secondary");
+
+  const color = muscleColors[pe.color] || T.teal;
 
   return (
     <div style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 16, padding: "14px 10px 8px", display: "flex", gap: 4 }}>

@@ -52,9 +52,9 @@ function Heatmap({ workouts }) {
 
   function intensityColor(count) {
     if (count === 0) return T.elevated2;
-    if (count === 1) return T.teal + "55";
-    if (count === 2) return T.teal + "99";
-    return T.teal;
+    if (count === 1) return T.sky + "55";
+    if (count === 2) return T.sky + "99";
+    return T.sky;
   }
 
   return (
@@ -77,7 +77,7 @@ function Heatmap({ workouts }) {
       </svg>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
         <span style={{ fontSize: 10, color: T.textDim }}>Less</span>
-        {[T.elevated2, T.teal + "55", T.teal + "99", T.teal].map((color, i) => (
+        {[T.elevated2, T.sky + "55", T.sky + "99", T.sky].map((color, i) => (
           <div key={i} style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
         ))}
         <span style={{ fontSize: 10, color: T.textDim }}>More</span>
@@ -228,16 +228,16 @@ function ExerciseProgress({ workouts }) {
       <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", marginBottom: 12 }}>
         {names.slice(0, 8).map((name) => (
           <button key={name} onClick={() => setSelected(name)}
-            style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 9999, background: active === name ? T.teal : T.elevated, color: active === name ? "#0A0A0F" : T.textMuted, border: `1px solid ${active === name ? T.teal : T.border}`, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 9999, background: active === name ? T.sky : T.elevated, color: active === name ? "#0A0A0F" : T.textMuted, border: `1px solid ${active === name ? T.sky : T.border}`, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
             {name}
           </button>
         ))}
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
-        <path d={`${path} L${coords[coords.length - 1].x},${H - PAD} L${coords[0].x},${H - PAD} Z`} fill={`${T.teal}18`} stroke="none" />
-        <path d={path} fill="none" stroke={T.teal} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`${path} L${coords[coords.length - 1].x},${H - PAD} L${coords[0].x},${H - PAD} Z`} fill={`${T.sky}18`} stroke="none" />
+        <path d={path} fill="none" stroke={T.sky} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         {coords.map((c, i) => (
-          <circle key={i} cx={c.x} cy={c.y} r={3} fill={T.surface} stroke={T.teal} strokeWidth={1.5}>
+          <circle key={i} cx={c.x} cy={c.y} r={3} fill={T.surface} stroke={T.sky} strokeWidth={1.5}>
             <title>{points[i].date}: {points[i].weight}kg</title>
           </circle>
         ))}
@@ -279,7 +279,7 @@ function CalorieBalance({ history, workouts, calorieTarget }) {
         {days.map((d) => (
           <div key={d.iso} style={{ flex: 1, display: "flex", gap: 1, alignItems: "flex-end", height: "100%" }} title={`${d.iso}: ${Math.round(d.intake)} in / ${Math.round(d.burned)} out`}>
             <div style={{ flex: 1, height: `${(d.intake / maxVal) * 100}%`, minHeight: d.intake > 0 ? 3 : 1, background: T.amber, borderRadius: 2, opacity: 0.9 }} />
-            <div style={{ flex: 1, height: `${(d.burned / maxVal) * 100}%`, minHeight: d.burned > 0 ? 3 : 1, background: T.teal, borderRadius: 2, opacity: 0.9 }} />
+            <div style={{ flex: 1, height: `${(d.burned / maxVal) * 100}%`, minHeight: d.burned > 0 ? 3 : 1, background: T.sky, borderRadius: 2, opacity: 0.9 }} />
           </div>
         ))}
       </div>

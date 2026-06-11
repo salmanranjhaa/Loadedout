@@ -6,7 +6,7 @@ import { inventoryAPI } from "../utils/api";
 import PantryDetailPage from "./details/PantryDetailPage";
 
 const FILTER_CATS = [
-  { id: "all",     label: "All",     color: T.teal   },
+  { id: "all",     label: "All",     color: T.orange   },
   { id: "protein", label: "Protein", color: T.negative },
   { id: "produce", label: "Produce", color: "#5FC87A" },
   { id: "grains",  label: "Grains",  color: T.amber  },
@@ -86,7 +86,7 @@ function AddItemSheet({ onClose, onAdded }) {
             </button>
           ))}
         </div>
-        <button onClick={handleSave} disabled={saving || !name.trim()} style={{ width: "100%", padding: "13px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving || !name.trim() ? "not-allowed" : "pointer", opacity: saving || !name.trim() ? 0.5 : 1, fontFamily: "inherit" }}>
+        <button onClick={handleSave} disabled={saving || !name.trim()} style={{ width: "100%", padding: "13px 0", background: T.orange, color: "#0A0A0F", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving || !name.trim() ? "not-allowed" : "pointer", opacity: saving || !name.trim() ? 0.5 : 1, fontFamily: "inherit" }}>
           {saving ? "Adding…" : "Add to Pantry"}
         </button>
       </div>
@@ -182,13 +182,13 @@ export default function InventoryPage({ profile, onProfile }) {
 
       <PageScroll>
         {/* AI chip banner */}
-        <div style={{ margin: "0 20px 16px", borderRadius: T.rCard, background: `linear-gradient(135deg, ${T.violet}33, ${T.teal}22)`, border: `1px solid ${T.violet}44`, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${T.violet}, ${T.teal})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ margin: "0 20px 16px", borderRadius: T.rCard, background: `linear-gradient(135deg, ${T.violet}33, ${T.orange}22)`, border: `1px solid ${T.violet}44`, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${T.violet}, ${T.orange})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Icon name="sparkle" size={18} color="#0A0A0F" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>AI uses this for meal suggestions</div>
-            <div style={{ fontSize: 11, color: T.teal }}>
+            <div style={{ fontSize: 11, color: T.orange }}>
               {mealMatchCount} meal ideas match your current pantry · tap to see
             </div>
           </div>
@@ -221,7 +221,7 @@ export default function InventoryPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" />
+      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} />
       {showAdd && <AddItemSheet onClose={() => setShowAdd(false)} onAdded={reload} />}
       {selectedItem && (
         <PantryDetailPage

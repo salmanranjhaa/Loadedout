@@ -218,7 +218,7 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
             disabled={saving || !form.title.trim()}
             style={{
               flex: 2, padding: "12px", borderRadius: 12,
-              background: saving || !form.title.trim() ? T.elevated : T.teal,
+              background: saving || !form.title.trim() ? T.elevated : T.blue,
               border: "none", color: saving || !form.title.trim() ? T.textDim : "#0A0A0F",
               fontSize: 14, fontWeight: 700, cursor: saving || !form.title.trim() ? "default" : "pointer",
               fontFamily: T.fontFamily, transition: "all 0.15s",
@@ -486,7 +486,7 @@ export default function SchedulePage({ profile, onProfile }) {
             {/* Google chip */}
             {googleStatus.connected ? (
               <Chip active={false} onClick={syncGoogle} size="sm">
-                <Icon name="google" size={11} color={googleSyncing ? T.textDim : T.teal} />
+                <Icon name="google" size={11} color={googleSyncing ? T.textDim : T.blue} />
                 {googleSyncing ? "Syncing…" : "Sync"}
               </Chip>
             ) : (
@@ -527,9 +527,9 @@ export default function SchedulePage({ profile, onProfile }) {
                 gap: 4,
                 cursor: "pointer",
                 width: 44,
-                background: isSelected ? T.teal : "transparent",
+                background: isSelected ? T.blue : "transparent",
                 border: isTodayPill && !isSelected
-                  ? `1.5px solid ${T.teal}`
+                  ? `1.5px solid ${T.blue}`
                   : isSelected
                     ? "none"
                     : `1px solid ${T.border}`,
@@ -540,7 +540,7 @@ export default function SchedulePage({ profile, onProfile }) {
                 fontSize: 9.5,
                 fontWeight: 700,
                 letterSpacing: 0.4,
-                color: isSelected ? "#0A0A0F" : isTodayPill ? T.teal : T.textDim,
+                color: isSelected ? "#0A0A0F" : isTodayPill ? T.blue : T.textDim,
                 textTransform: "uppercase",
               }}>
                 {d}
@@ -613,12 +613,12 @@ export default function SchedulePage({ profile, onProfile }) {
                     width: 9,
                     height: 9,
                     borderRadius: 9999,
-                    background: T.teal,
+                    background: T.blue,
                     flexShrink: 0,
                     marginLeft: -4,
-                    boxShadow: `0 0 8px ${T.teal}99`,
+                    boxShadow: `0 0 8px ${T.blue}99`,
                   }} />
-                  <div style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, ${T.teal}, ${T.teal}00)`, opacity: 0.85 }} />
+                  <div style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, ${T.blue}, ${T.blue}00)`, opacity: 0.85 }} />
                 </div>
               )}
 
@@ -657,7 +657,7 @@ export default function SchedulePage({ profile, onProfile }) {
       <Fab
         onClick={() => setModal({ mode: "create" })}
         icon="plus"
-        color={T.teal}
+        color={T.blue}
         bottom={100}
         right={20}
       />

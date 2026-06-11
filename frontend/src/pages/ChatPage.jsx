@@ -707,7 +707,7 @@ export default function ChatPage({ profile, onProfile }) {
               </div>
               <PromptCards onAction={(prompt) => sendMessage(prompt)} />
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
-                <Icon name="sparkle" size={11} color={T.teal} />
+                <Icon name="sparkle" size={11} color={T.violet} />
                 <span style={{ fontSize: 11, color: T.textDim }}>
                   Tip: say <strong style={{ color: T.textMuted }}>"save this"</strong> to log meals, workouts or events.
                 </span>
@@ -726,7 +726,7 @@ export default function ChatPage({ profile, onProfile }) {
                   <div
                     style={{
                       maxWidth: "85%",
-                      background: isUser ? T.teal : T.surface,
+                      background: isUser ? T.violet : T.surface,
                       color: isUser ? "#0A0A0F" : T.textMuted,
                       borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
                       padding: "10px 14px",
@@ -838,7 +838,7 @@ export default function ChatPage({ profile, onProfile }) {
             width: 36,
             height: 36,
             borderRadius: 9999,
-            background: input.trim() && !loading ? T.teal : T.elevated2,
+            background: input.trim() && !loading ? T.violet : T.elevated2,
             border: "none",
             display: "flex",
             alignItems: "center",
