@@ -14,6 +14,7 @@ from app.models.meal import MealTemplate, MealLog
 from app.models.inventory import InventoryItem
 from app.models.schedule import ScheduleEvent
 from app.models.analytics import WorkoutLog, WeightLog
+from app.models.budget import BudgetEntry
 from app.models.fitness import PersonalRecord
 from app.services.vertex_ai import (
     chat_with_ai,
@@ -177,6 +178,26 @@ async def _build_full_context(db: AsyncSession, user_id: int, message: str, toda
     if prs:
         pr_line = ", ".join(f"{p.exercise_name} {p.weight_kg}kg×{p.reps}" for p in prs)
         context += f"\n\nPERSONAL RECORDS: {pr_line}"
+
+    # Budget — month-to-date spending by category, so the coach can weigh
+    # cost when suggesting meals/plans ("eat out" vs "cook from pantry")
+    month_start = today.replace(day=1)
+    budget_result = await db.execute(
+        select(BudgetEntry)
+        .where(BudgetEntry.user_id == user_id, BudgetEntry.date >= month_start)
+    )
+    budget_entries = budget_result.scalars().all()
+    if budget_entries:
+        by_cat: dict[str, float] = {}
+        for b in budget_entries:
+            by_cat[b.category] = by_cat.get(b.category, 0) + (b.amount or 0)
+        total_spent = sum(v for k, v in by_cat.items() if k != "income")
+        cat_line = ", ".join(f"{k}: {v:.0f}" for k, v in sorted(by_cat.items(), key=lambda kv: -kv[1]))
+        context += (
+            f"\n\nBUDGET (month to date, CHF): total spent {total_spent:.0f}"
+            + (f" of {profile.monthly_budget:.0f} budget" if getattr(profile, "monthly_budget", None) else "")
+            + f". By category: {cat_line}"
+        )
 
     # Pantry
     inventory_result = await db.execute(
