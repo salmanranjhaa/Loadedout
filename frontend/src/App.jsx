@@ -215,7 +215,11 @@ export default function App() {
   return (
     <div
       style={{
-        minHeight: "100dvh",
+        // Exact viewport height (not min-height): the app frame must never
+        // grow past the screen, or anything that expands — like the chat
+        // composer — pushes itself below the fold instead of compressing
+        // the scroll area above it.
+        height: "100dvh",
         background: T.bg,
         color: T.text,
         fontFamily: T.fontFamily,
