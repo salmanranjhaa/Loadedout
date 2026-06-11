@@ -66,7 +66,7 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 100,
-        background: "rgba(7,10,16,0.88)",
+        background: "rgba(10,11,16,0.88)",
         display: "flex", alignItems: "flex-end",
         backdropFilter: "blur(4px)",
       }}

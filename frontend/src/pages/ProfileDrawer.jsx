@@ -99,7 +99,7 @@ function GamificationSection({ profile }) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
           <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>{progress} / {required} XP to next level</span>
-          <span style={{ fontSize: 9, color: T.teal, fontFamily: T.fontMono, fontWeight: 600 }}>+{XP_PER_WORKOUT} XP / workout</span>
+          <span style={{ fontSize: 9, color: T.gold, fontFamily: T.fontMono, fontWeight: 600 }}>+{XP_PER_WORKOUT} XP / workout</span>
         </div>
       </div>
 
@@ -111,7 +111,7 @@ function GamificationSection({ profile }) {
           { icon: "fire",     label: "Day Streak",  value: stats.streak },
         ].map(({ icon, label, value }) => (
           <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 8px", textAlign: "center" }}>
-            <Icon name={icon} size={14} color={T.teal} />
+            <Icon name={icon} size={14} color={T.gold} />
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, fontFamily: T.fontMono, marginTop: 4 }}>{value}</div>
             <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
           </div>
@@ -124,13 +124,13 @@ function GamificationSection({ profile }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {earned.map((a) => (
-          <div key={a.id} style={{ background: `${T.teal}10`, border: `1px solid ${T.teal}33`, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div key={a.id} style={{ background: `${T.gold}10`, border: `1px solid ${T.gold}33`, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20, flexShrink: 0 }}>{a.icon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{a.label}</div>
               <div style={{ fontSize: 10, color: T.textMuted }}>{a.desc}</div>
             </div>
-            <span style={{ fontSize: 10, color: T.teal, fontWeight: 700, fontFamily: T.fontMono, flexShrink: 0 }}>+{a.xp} XP</span>
+            <span style={{ fontSize: 10, color: T.gold, fontWeight: 700, fontFamily: T.fontMono, flexShrink: 0 }}>+{a.xp} XP</span>
           </div>
         ))}
         {locked.slice(0, 3).map((a) => (
@@ -195,12 +195,12 @@ function AvatarHero({ profile, streak }) {
         <div style={{
           display: "flex", alignItems: "center", gap: 6,
           padding: "5px 12px",
-          background: `${T.amber}18`,
-          border: `1px solid ${T.amber}44`,
+          background: `${T.gold}18`,
+          border: `1px solid ${T.gold}44`,
           borderRadius: 9999,
         }}>
-          <Icon name="fire" size={14} color={T.amber} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: T.amber }}>
+          <Icon name="fire" size={14} color={T.gold} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.gold }}>
             {streak} day streak
           </span>
         </div>

@@ -43,7 +43,7 @@ function TemplateCardSmall({ t, onStart }) {
           <span key={m} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 7px" }}>{m}</span>
         ))}
       </div>
-      <button onClick={() => onStart(t)} style={{ marginTop: "auto", padding: "8px 0", background: c + "22", color: c, border: `1px solid ${c}44`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+      <button onClick={() => onStart(t)} style={{ marginTop: "auto", padding: "8px 0", background: T.elevated, color: T.text, border: `1px solid ${T.borderStrong}`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
         Start
       </button>
     </div>
@@ -146,19 +146,19 @@ function HeroCard({ onStart, onBrowse, workoutInsight, aiSuggestion, aiThinking 
   const tag = ai ? (isRest ? "AI Coach · Recovery" : `AI Pick · ${ai.focus || "Today"}`) : insight ? "Suggested next" : "Quick start";
 
   return (
-    <div style={{ margin: "0 20px 20px", borderRadius: T.rCard, background: `linear-gradient(135deg,${T.teal}1A,${T.violet}33)`, border: `1px solid ${T.teal}33`, padding: 20, position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: `radial-gradient(circle,${T.violet}44,transparent 70%)`, pointerEvents: "none" }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+    <div style={{ margin: "0 20px 20px", borderRadius: T.rCard, background: T.surface, border: `1px solid ${T.border}`, padding: 20, position: "relative", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
         {ai && <Icon name="sparkle" size={11} color={T.teal} />}
-        <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.teal, letterSpacing: 1.4, fontWeight: 700, textTransform: "uppercase" }}>
+        <span style={{ ...T.type.eyebrow, fontFamily: T.fontMono, color: T.textMuted }}>
           {tag}
         </span>
         {aiThinking && <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>· coach is thinking…</span>}
       </div>
-      <div style={{ fontSize: 23, fontWeight: 800, color: T.text, letterSpacing: -0.6, marginBottom: 4, lineHeight: 1.15 }}>
+      <div style={{ ...T.type.hero, color: T.text, marginBottom: 6 }}>
         {title}
       </div>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4, lineHeight: 1.45 }}>
+      {/* The coach's reasoning gets the family serif-italic voice */}
+      <div style={{ fontSize: ai ? 13.5 : 12, color: T.textMuted, marginBottom: 4, lineHeight: 1.5, fontFamily: ai ? T.fontSerif : T.fontFamily, fontStyle: ai ? "italic" : "normal" }}>
         {subtitle}
       </div>
       {freshnessStr && (
@@ -294,7 +294,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(7,10,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -409,7 +409,7 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(7,10,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -495,7 +495,7 @@ function NewTemplateModal({ onClose, onSaved }) {
 
   return (
     <>
-      <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(7,10,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
         <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
           <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 
@@ -760,7 +760,7 @@ export default function WorkoutPage({ profile, onProfile }) {
         </div>
 
         <div style={{ padding: "0 20px 8px" }}>
-          <SectionHead title="Templates" trailing={<span style={{ fontSize: 12, color: T.teal, cursor: "pointer" }} onClick={() => setShowBrowser(true)}>See all</span>} />
+          <SectionHead title="Templates" trailing={<span style={{ fontSize: 12, color: T.textMuted, cursor: "pointer" }} onClick={() => setShowBrowser(true)}>See all ›</span>} />
         </div>
         <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "4px 20px 24px", scrollbarWidth: "none" }}>
           {loading ? (

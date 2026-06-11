@@ -791,7 +791,7 @@ export default function ChatPage({ profile, onProfile }) {
       <div
         style={{
           flexShrink: 0,
-          background: "rgba(7,10,16,0.95)",
+          background: "rgba(10,11,16,0.95)",
           backdropFilter: "blur(20px)",
           borderTop: `0.5px solid ${T.border}`,
           padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",

@@ -586,7 +586,7 @@ export function Modal({ open, onClose, title, children, actions }) {
         alignItems: "center",
         justifyContent: "center",
         padding: 20,
-        background: "rgba(7,10,16,0.85)",
+        background: "rgba(10,11,16,0.85)",
         backdropFilter: "blur(4px)",
       }}
       onClick={(e) => e.target === e.currentTarget && onClose?.()}
@@ -629,7 +629,7 @@ export function BottomSheet({ open, onClose, title, children, height = "auto" })
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
-        background: "rgba(7,10,16,0.88)",
+        background: "rgba(10,11,16,0.88)",
         backdropFilter: "blur(4px)",
       }}
       onClick={(e) => e.target === e.currentTarget && onClose?.()}

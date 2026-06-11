@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, Suspense, lazy } from "react";
-import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
 import { isLoggedIn, clearToken, userAPI } from "./utils/api";
 import { initOfflineSync } from "./utils/offline";
-import { T } from "./design/tokens";
+import { T, domainColor } from "./design/tokens";
 import { Icon } from "./design/icons";
 import LoginPage from "./pages/LoginPage";
 import ProfileDrawer from "./pages/ProfileDrawer";
@@ -98,6 +98,8 @@ function PageFallback() {
 }
 
 export default function App() {
+  const location = useLocation();
+  const accent = domainColor(location.pathname);
   const [loggedIn, setLoggedIn]         = useState(isLoggedIn());
   const [profile, setProfile]           = useState(null);
   const [profileLoading, setProfileLoading] = useState(!!isLoggedIn());
@@ -242,8 +244,22 @@ export default function App() {
         }}
       />
 
+      {/* Atmosphere — one subtle glow tinted by the current domain, replacing
+          ad-hoc per-card glows. Sits behind everything, never intercepts input. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: "none",
+          background: `radial-gradient(420px 300px at 85% -4%, ${accent}17, transparent 65%),
+                       radial-gradient(360px 260px at -10% 30%, ${accent}0A, transparent 60%)`,
+          transition: "background 0.6s ease",
+        }}
+      />
+
       {/* Page content */}
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+      <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}>
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Navigate to="/schedule" replace />} />
@@ -271,7 +287,7 @@ export default function App() {
           transform: "translateX(-50%)",
           width: "100%",
           maxWidth: 430,
-          background: "rgba(7,10,16,0.88)",
+          background: "rgba(10,11,16,0.88)",
           backdropFilter: "blur(20px) saturate(180%)",
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderTop: `0.5px solid ${T.border}`,
@@ -292,7 +308,8 @@ export default function App() {
                 gap: 3,
                 flex: 1,
                 padding: "6px 4px",
-                color: isActive ? T.teal : T.textDim,
+                // Active tab lights up in its own domain color
+                color: isActive ? domainColor(path) : T.textDim,
                 textDecoration: "none",
                 cursor: "pointer",
               })}

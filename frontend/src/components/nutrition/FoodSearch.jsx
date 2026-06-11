@@ -541,7 +541,7 @@ function PhotoTab({ onSelect }) {
         <>
           <div style={{ position: "relative" }}>
             <img src={preview} alt="meal" style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 12, border: `1px solid ${T.border}` }} />
-            <button onClick={reset} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(7,10,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={reset} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(10,11,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Icon name="x" size={12} color={T.text} />
             </button>
           </div>
@@ -683,7 +683,7 @@ function BarcodeTab({ onSelect }) {
         <div style={{ position: "relative" }}>
           <video id="lo-barcode-video" muted playsInline style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 12, background: "#000" }} />
           <div style={{ position: "absolute", inset: "35% 12%", border: `2px solid ${T.teal}`, borderRadius: 8, pointerEvents: "none" }} />
-          <button onClick={() => setScanning(false)} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(7,10,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={() => setScanning(false)} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(10,11,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name="x" size={12} color={T.text} />
           </button>
         </div>

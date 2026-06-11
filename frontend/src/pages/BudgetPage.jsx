@@ -321,7 +321,7 @@ export default function BudgetPage({ profile, onProfile }) {
               { label: "Spent", value: `CHF ${totalExpenses.toFixed(0)}`, color: T.negative },
               { label: "Saved", value: `CHF ${Math.max(0, balance).toFixed(0)}`, color: "#5C8FFC" },
             ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: "rgba(7,10,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+              <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
                 <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
               </div>

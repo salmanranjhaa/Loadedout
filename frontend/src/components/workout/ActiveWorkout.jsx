@@ -237,12 +237,12 @@ function WorkoutSummary({ workout, onClose }) {
 
         {/* PR list */}
         {workout.exercises.filter((e) => e.newPR).length > 0 && (
-          <div style={{ width: "100%", background: T.teal + "18", border: `1px solid ${T.teal}44`, borderRadius: 16, padding: "14px 16px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>New Personal Records</div>
+          <div style={{ width: "100%", background: T.gold + "14", border: `1px solid ${T.gold}44`, borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.gold, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>New Personal Records</div>
             {workout.exercises.filter((e) => e.newPR).map((e) => (
               <div key={e.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
                 <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{e.name}</span>
-                <span style={{ fontSize: 13, color: T.teal, fontFamily: T.fontMono, fontWeight: 700 }}>{e.newPR.weight_kg}kg × {e.newPR.reps}</span>
+                <span style={{ fontSize: 13, color: T.gold, fontFamily: T.fontMono, fontWeight: 700 }}>{e.newPR.weight_kg}kg × {e.newPR.reps}</span>
               </div>
             ))}
           </div>
@@ -582,7 +582,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
                       </span>
                     )}
                     {pr && (
-                      <span style={{ fontSize: 10, color: T.amber, fontFamily: T.fontMono }}>
+                      <span style={{ fontSize: 10, color: T.gold, fontFamily: T.fontMono }}>
                         PR: {pr.weight_kg}kg{e1rm ? ` · ~${e1rm}kg 1RM` : ""}
                       </span>
                     )}
@@ -655,12 +655,12 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       {/* PR Celebration */}
       {celebration && (
         <div
-          style={{ position: "fixed", inset: 0, zIndex: T.z.confetti, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(7,10,16,0.7)", backdropFilter: "blur(4px)", animation: "lo-fade-up 0.3s ease" }}
+          style={{ position: "fixed", inset: 0, zIndex: T.z.confetti, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,11,16,0.7)", backdropFilter: "blur(4px)", animation: "lo-fade-up 0.3s ease" }}
           onClick={() => setCelebration(null)}
         >
-          <div style={{ background: T.surface, border: `1px solid ${T.teal}44`, borderRadius: T.rCard, padding: "32px 28px", textAlign: "center", maxWidth: 280, boxShadow: `0 0 40px ${T.teal}33` }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.gold}55`, borderRadius: T.rCard, padding: "32px 28px", textAlign: "center", maxWidth: 280, boxShadow: `0 0 40px ${T.gold}33` }}>
             <div style={{ fontSize: 44, marginBottom: 8 }}>🏆</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: T.teal, marginBottom: 6 }}>New PR!</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: T.gold, marginBottom: 6 }}>New PR!</div>
             <div style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{celebration.exercise}</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: T.text, fontFamily: T.fontMono, marginTop: 10 }}>{celebration.weight}kg</div>
             <div style={{ fontSize: 13, color: T.textMuted }}>× {celebration.reps} reps</div>

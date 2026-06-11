@@ -4,6 +4,7 @@ import { Icon } from "../../design/icons";
 import { Badge, BottomSheet } from "../../design/components";
 import { exerciseAPI } from "../../utils/api";
 import exerciseData from "../../lib/exercises.json";
+import MuscleMap from "./MuscleMap";
 
 const MUSCLE_GROUPS = [
   { id: "all",       label: "All",       color: T.textMuted },
@@ -68,7 +69,7 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: "rgba(7,10,16,0.92)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(6px)" }}
+      style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: "rgba(10,11,16,0.92)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(6px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -85,16 +86,34 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
           </button>
         </div>
 
-        <ProxyGif exerciseId={exercise.id} name={exercise.name} />
-
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {exercise.primary  && <Badge color={muscleColors[exercise.primary]  || T.teal}    size="sm">{exercise.primary}</Badge>}
+          {(exercise.secondary || []).slice(0, 2).map((m) => (
+            <Badge key={m} color={T.textMuted} size="sm">{m}</Badge>
+          ))}
           {exercise.equipment && <Badge color={T.textDim} size="sm">{exercise.equipment}</Badge>}
           {exercise.difficulty && (
             <Badge color={exercise.difficulty === "beginner" ? T.teal : exercise.difficulty === "advanced" ? T.negative : T.amber} size="sm">
               {exercise.difficulty}
             </Badge>
           )}
+        </div>
+
+        {/* Targeted muscles — custom map instead of leading with the stock GIF */}
+        <div>
+          <div style={{ ...T.type.eyebrow, fontFamily: T.fontMono, color: T.textDim, marginBottom: 8 }}>Targets</div>
+          <MuscleMap primary={exercise.primary} secondary={exercise.secondary || []} />
+        </div>
+
+        {/* Demo — deliberately plated so the white stock GIF reads as content,
+            not as a hole in the dark UI */}
+        <div>
+          <div style={{ ...T.type.eyebrow, fontFamily: T.fontMono, color: T.textDim, marginBottom: 8 }}>Demo</div>
+          <div style={{ background: "#F4F2EC", borderRadius: 16, border: `1px solid ${T.border}`, padding: 10, display: "flex", justifyContent: "center" }}>
+            <div style={{ width: "72%", maxWidth: 240 }}>
+              <ProxyGif exerciseId={exercise.id} name={exercise.name} />
+            </div>
+          </div>
         </div>
 
         {loadingGuidance && (
