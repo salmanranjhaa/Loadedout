@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { T, catColors } from "../design/tokens";
 import { Icon } from "../design/icons";
+import { showToast } from "../utils/toast";
 import {
   PageHeader, PageScroll, Chip, Fab, LoadingDots, EmptyState,
 } from "../design/components";
@@ -380,7 +381,7 @@ export default function SchedulePage({ profile, onProfile }) {
       const status = await scheduleAPI.googleStatus();
       setGoogleStatus(status);
     } catch (e) {
-      alert(e.message || "Failed to connect Google Calendar");
+      showToast(e.message || "Failed to connect Google Calendar", "error");
     }
     setGoogleLoading(false);
   }
@@ -393,7 +394,7 @@ export default function SchedulePage({ profile, onProfile }) {
       setGoogleStatus(status);
       await refreshEvents();
     } catch (e) {
-      alert(e.message || "Sync failed");
+      showToast(e.message || "Sync failed", "error");
     }
     setGoogleSyncing(false);
   }
@@ -413,7 +414,7 @@ export default function SchedulePage({ profile, onProfile }) {
       });
       setEvents(prev => [...prev, created].sort((a,b) => a.start_time.localeCompare(b.start_time)));
       setModal(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast(e.message, "error"); }
     setSaving(false);
   }
 
@@ -435,7 +436,7 @@ export default function SchedulePage({ profile, onProfile }) {
           .sort((a,b) => a.start_time.localeCompare(b.start_time))
       );
       setModal(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast(e.message, "error"); }
     setSaving(false);
   }
 
@@ -443,7 +444,7 @@ export default function SchedulePage({ profile, onProfile }) {
     try {
       await scheduleAPI.delete(eventId);
       setEvents(prev => prev.filter(e => e.id !== eventId));
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast(e.message, "error"); }
   }
 
   const totalHours = HOUR_END - HOUR_START;

@@ -36,3 +36,11 @@ www.salmanranjha.me {
 http://salmanranjha.me {
     redir https://www.salmanranjha.me{uri} permanent
 }
+
+polarisedu.info {
+    reverse_proxy polaris-backend:3001
+}
+
+www.polarisedu.info {
+    redir https://polarisedu.info{uri} 301
+}

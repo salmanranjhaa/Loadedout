@@ -3,6 +3,13 @@ import { T, muscleColors } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge, BottomSheet } from "../../design/components";
 import ExerciseBrowser from "./ExerciseBrowser";
+import { workoutAPI, prAPI } from "../../utils/api";
+import { showToast } from "../../utils/toast";
+
+function localISODate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function formatTime(seconds) {
@@ -425,6 +432,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       workout_type:    template?.workout_type || "strength",
       duration_minutes: Math.floor(elapsed / 60),
       duration_seconds: durationSeconds,
+      date:            localISODate(),
       exercises: exercises.map((ex) => ({
         name:   ex.name,
         newPR:  ex.newPR || null,
@@ -437,6 +445,41 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       })).filter((ex) => ex.sets.length > 0),
     };
     saveWorkoutToHistory(workout);
+
+    // Persist to the backend so sessions sync across devices, feed analytics,
+    // and are visible to the AI coach. localStorage stays as the offline cache.
+    if (workout.exercises.length > 0) {
+      const totalVolume = workout.exercises.reduce(
+        (s, e) => s + e.sets.reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0), 0
+      );
+      workoutAPI.save({
+        workout_type: workout.workout_type,
+        duration_minutes: Math.max(workout.duration_minutes, 1),
+        intensity: "moderate",
+        description: `${workout.name} — ${workout.exercises.length} exercises, ${Math.round(totalVolume)}kg total volume`,
+        date: workout.date,
+        details: {
+          exercises: workout.exercises.map(({ name, sets }) => ({ name, sets })),
+          total_volume_kg: Math.round(totalVolume),
+        },
+      }).then((res) => {
+        if (res?.queued) showToast("Workout saved offline — will sync later");
+      }).catch((err) => {
+        showToast(err.message || "Workout saved locally only — sync failed", "error");
+      });
+
+      for (const ex of workout.exercises) {
+        if (ex.newPR) {
+          prAPI.upsert({
+            exercise_name: ex.name,
+            weight_kg: ex.newPR.weight_kg,
+            reps: ex.newPR.reps,
+            date: workout.date,
+          }).catch(() => {});
+        }
+      }
+    }
+
     onFinish?.(workout);
     setSummary(workout);
   };

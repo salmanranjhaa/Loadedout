@@ -818,15 +818,16 @@ WORKOUT: {workout_type} | {duration_minutes} min | {intensity} intensity
 DESCRIPTION: {description or "No description provided"}
 METRICS: {metrics_json}
 
-Respond with exactly this JSON structure:
+Respond with exactly this JSON structure (compute every value from THIS workout's
+type, duration, intensity, and metrics — do not reuse these placeholder descriptions):
 {{
-  "calories_burned": 450,
-  "intensity_score": 7,
-  "muscle_groups": ["quads", "glutes", "core"],
-  "cardio_impact": "high",
-  "recovery_hours": 24,
-  "notes": "One brief coaching insight sentence.",
-  "weekly_impact": "How this fits the weight loss goal."
+  "calories_burned": <integer kcal estimate for this athlete and workout>,
+  "intensity_score": <integer 1-10>,
+  "muscle_groups": [<lowercase muscle group strings>],
+  "cardio_impact": <"low"|"moderate"|"high">,
+  "recovery_hours": <integer hours before training same muscles>,
+  "notes": <one brief coaching insight sentence specific to this workout>,
+  "weekly_impact": <one sentence on how this fits the athlete's goal>
 }}"""
 
     try:

@@ -114,9 +114,13 @@ export default function App() {
       try {
         const p = await userAPI.getProfile();
         if (!cancelled) setProfile(p);
-      } catch {
-        clearToken();
-        if (!cancelled) { setProfile(null); setLoggedIn(false); }
+      } catch (err) {
+        // Only end the session on real auth failures — a flaky network or a
+        // backend blip should never log the user out.
+        if (err?.status === 401 || err?.status === 403) {
+          clearToken();
+          if (!cancelled) { setProfile(null); setLoggedIn(false); }
+        }
       } finally {
         if (!cancelled) setProfileLoading(false);
       }

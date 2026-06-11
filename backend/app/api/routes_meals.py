@@ -1,6 +1,6 @@
 import logging
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -26,6 +26,17 @@ class MealLogCreate(BaseModel):
     fat_g: Optional[float] = None
     custom_ingredients: Optional[list] = None
     notes: Optional[str] = None
+    # Client-local date (YYYY-MM-DD); server date is UTC and can be a day off
+    date: Optional[str] = None
+
+
+def _parse_client_date(raw: Optional[str]) -> date:
+    if raw:
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            pass
+    return date.today()
 
 
 class ManualMealEntry(BaseModel):
@@ -224,7 +235,7 @@ async def log_meal(
     """I log a meal and update the daily snapshot."""
     log = MealLog(
         user_id=user["sub"],
-        date=date.today(),
+        date=_parse_client_date(meal.date),
         meal_type=meal.meal_type,
         template_id=meal.template_id,
         name=meal.name,
@@ -277,13 +288,15 @@ async def log_meal_manual(
 @limiter.limit("100/minute")
 async def get_today_meals(
     request: Request,
+    date_param: Optional[str] = Query(None, alias="date"),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """I return all meals logged today with running totals."""
+    """I return all meals logged on the given day (client-local) with running totals."""
+    target_date = _parse_client_date(date_param)
     result = await db.execute(
         select(MealLog)
-        .where(MealLog.user_id == user["sub"], MealLog.date == date.today())
+        .where(MealLog.user_id == user["sub"], MealLog.date == target_date)
         .order_by(MealLog.created_at)
     )
     meals = result.scalars().all()

@@ -47,14 +47,50 @@ function getToken() {
   return localStorage.getItem("lifeplan_token");
 }
 
+function getRefreshToken() {
+  return localStorage.getItem("lifeplan_refresh_token");
+}
+
 export function setToken(access, refresh) {
   localStorage.setItem("lifeplan_token", access);
-  localStorage.setItem("lifeplan_refresh_token", refresh);
+  if (refresh) localStorage.setItem("lifeplan_refresh_token", refresh);
 }
 
 export function clearToken() {
   localStorage.removeItem("lifeplan_token");
   localStorage.removeItem("lifeplan_refresh_token");
+}
+
+// Single-flight refresh: concurrent 401s must share one refresh call, because
+// the backend rotates tokens and treats reuse of an old token as theft
+// (revoking the whole family and forcing a re-login).
+let refreshPromise = null;
+
+async function tryRefreshTokens() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const refresh_token = getRefreshToken();
+      if (!refresh_token) return false;
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token }),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.access_token) return false;
+        setToken(data.access_token, data.refresh_token);
+        return true;
+      } catch {
+        // Network failure — keep tokens so we can retry later instead of logging out
+        return null;
+      } finally {
+        setTimeout(() => { refreshPromise = null; }, 0);
+      }
+    })();
+  }
+  return refreshPromise;
 }
 
 initOfflineQueue();
@@ -63,7 +99,7 @@ export function isLoggedIn() {
   return !!getToken();
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, _retried = false) {
   const token = getToken();
   const headers = {
     "Content-Type": "application/json",
@@ -73,6 +109,7 @@ async function request(path, options = {}) {
 
   const url = `${API_BASE}${path}`;
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(options.method || "GET");
+  const isAuthPath = path.startsWith("/auth/");
 
   if (!isOnline() && isMutation) {
     queueRequest(url, { ...options, headers });
@@ -83,18 +120,29 @@ async function request(path, options = {}) {
     const response = await fetch(url, { ...options, headers });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Request failed" }));
-      if (response.status === 401 && getToken()) {
-        // Only force-logout if we had a token (session expired), not on login attempts
-        clearToken();
-        window.location.reload();
+      // Access token expired — refresh once and retry the original request
+      if (response.status === 401 && token && !isAuthPath && !_retried) {
+        const refreshed = await tryRefreshTokens();
+        if (refreshed) {
+          return request(path, options, true);
+        }
+        if (refreshed === false) {
+          // Refresh token is definitively dead — session over
+          clearToken();
+          window.location.reload();
+        }
+        // refreshed === null: network hiccup; fall through and report the error
       }
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const error = await response.json().catch(() => ({ detail: "Request failed" }));
+      const detail = typeof error.detail === "string" ? error.detail : error.message || `HTTP ${response.status}`;
+      const err = new Error(detail);
+      err.status = response.status;
+      throw err;
     }
 
     return response.json();
   } catch (err) {
-    if (isMutation && !err.message?.includes("HTTP ")) {
+    if (isMutation && !err.status && !err.message?.includes("HTTP ")) {
       queueRequest(url, { ...options, headers });
       return { queued: true };
     }
@@ -165,7 +213,7 @@ export const mealsAPI = {
   updateLog: (id, data) => request(`/meals/log/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteLog: (id) => request(`/meals/log/${id}`, { method: "DELETE" }),
   logManual: (data) => request("/meals/log-manual", { method: "POST", body: JSON.stringify(data) }),
-  getToday: () => request("/meals/today"),
+  getToday: (date) => request(`/meals/today${date ? `?date=${date}` : ""}`),
   getHistory: (days) => request(`/meals/history?days=${days || 7}`),
 };
 
@@ -191,6 +239,11 @@ export const prAPI = {
   getAll: () => request("/workout/prs"),
   upsert: (data) => request("/workout/prs", { method: "POST", body: JSON.stringify(data) }),
   bulkSync: (prs) => request("/workout/prs/bulk", { method: "POST", body: JSON.stringify({ prs }) }),
+};
+
+export const foodAPI = {
+  search: (q, limit = 15) =>
+    request(`/food/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 };
 
 export const exerciseAPI = {

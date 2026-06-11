@@ -20,6 +20,7 @@ from app.api.routes_chat import router as chat_router
 from app.api.routes_admin import router as admin_router
 from app.api.routes_sync import router as sync_router
 from app.api.routes_exercises import router as exercises_router
+from app.api.routes_food import router as food_router
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -115,6 +116,7 @@ app.include_router(chat_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(sync_router, prefix="/api/v1")
 app.include_router(exercises_router, prefix="/api/v1")
+app.include_router(food_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -123,5 +125,6 @@ async def root():
 
 
 @app.get("/health")
+@app.get("/api/v1/health")
 async def health():
     return {"status": "healthy"}

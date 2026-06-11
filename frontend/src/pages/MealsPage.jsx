@@ -6,6 +6,7 @@ import {
   MacroBar, MacroRing, IllustratedEmptyState, LoadingDots, SkeletonRing, SkeletonCard, BottomSheet,
 } from "../design/components";
 import { mealsAPI, userAPI, aiAPI } from "../utils/api";
+import { showToast } from "../utils/toast";
 import MealDetailPage from "./details/MealDetailPage";
 import FoodSearch from "../components/nutrition/FoodSearch";
 import WaterTracker from "../components/nutrition/WaterTracker";
@@ -325,18 +326,16 @@ export default function MealsPage({ profile, onProfile }) {
   async function refresh() {
     try {
       const [today, tmpl, hist] = await Promise.all([
-        mealsAPI.getToday(),
+        mealsAPI.getToday(getTodayISO()),
         mealsAPI.getTemplates(),
         mealsAPI.getHistory(14),
       ]);
-      if (today) {
-        setTodayMeals(today.meals || []);
-        setSupplements(today.supplements || []);
-        setCheckedSupplements(today.checked_supplements || {});
-      }
+      if (today) setTodayMeals(today.meals || []);
       if (tmpl?.templates) setTemplates(tmpl.templates);
       if (hist?.history) setHistory(hist.history);
-    } catch {}
+    } catch (err) {
+      showToast(err.message || "Couldn't load meals", "error");
+    }
   }
 
   useEffect(() => {
@@ -344,11 +343,30 @@ export default function MealsPage({ profile, onProfile }) {
       setTargets({
         calories: profile.daily_calorie_target || 2400,
         protein: profile.daily_protein_target || 180,
-        carbs: profile.daily_carbs_target || 260,
+        carbs: profile.daily_carb_target || 260,
         fat: profile.daily_fat_target || 75,
       });
+      // Supplements live on the profile — flatten both supported shapes:
+      // a structured list [{name, dose, ...}] or legacy time buckets {morning: [...]}
+      const raw = profile.supplements;
+      let flat = [];
+      if (Array.isArray(raw)) {
+        flat = raw.filter((s) => s && s.name);
+      } else if (raw && typeof raw === "object") {
+        flat = Object.values(raw).flat().map((s) =>
+          typeof s === "string" ? { name: s } : s
+        ).filter((s) => s && s.name);
+      }
+      setSupplements(flat);
     }
   }, [profile]);
+
+  // Daily supplement checklist — persisted per local day on this device
+  useEffect(() => {
+    try {
+      setCheckedSupplements(JSON.parse(localStorage.getItem(`lo_supps_${getTodayISO()}`) || "{}"));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -396,14 +414,16 @@ export default function MealsPage({ profile, onProfile }) {
     try {
       await mealsAPI.deleteLog(id);
       refresh();
-    } catch {}
+    } catch (err) {
+      showToast(err.message || "Couldn't delete meal", "error");
+    }
   }
 
-  async function handleToggleSupplement(name) {
+  function handleToggleSupplement(name) {
     const next = { ...checkedSupplements, [name]: !checkedSupplements[name] };
     setCheckedSupplements(next);
     try {
-      await userAPI.updateProfile({ checked_supplements: next });
+      localStorage.setItem(`lo_supps_${getTodayISO()}`, JSON.stringify(next));
     } catch {}
   }
 
@@ -412,35 +432,48 @@ export default function MealsPage({ profile, onProfile }) {
     setRecipeLoading(true);
     try {
       const result = await aiAPI.estimateMacros(recipeText);
-      setRecipeResult(result);
-    } catch {}
+      if (result?.error) {
+        showToast(result.error, "error");
+      } else {
+        setRecipeResult(result);
+      }
+    } catch (err) {
+      showToast(err.message || "Estimation failed", "error");
+    }
     setRecipeLoading(false);
   }
 
   async function handleAddFood(food, groupName) {
     const mealType = (groupName || "breakfast").toLowerCase().replace("snacks", "snack");
     try {
-      await mealsAPI.logManual({
+      const res = await mealsAPI.logMeal({
         name: food.name,
         meal_type: mealType,
-        calories: food.calories,
-        protein_g: food.protein_g,
-        carbs_g: food.carbs_g,
-        fat_g: food.fat_g,
+        calories: food.calories || 0,
+        protein_g: food.protein_g || 0,
+        carbs_g: food.carbs_g ?? null,
+        fat_g: food.fat_g ?? null,
         date: selectedDate,
       });
       if (food._saveAsTemplate) {
-        mealsAPI.saveTemplate({ name: food.name, meal_type: mealType, calories: food.calories, protein_g: food.protein_g, carbs_g: food.carbs_g, fat_g: food.fat_g }).catch(() => {});
+        mealsAPI.saveTemplate({ name: food.name, meal_type: mealType, calories: food.calories || 0, protein_g: food.protein_g || 0, carbs_g: food.carbs_g, fat_g: food.fat_g }).catch(() => {});
       }
       setAddModal(null);
+      showToast(res?.queued ? "Saved offline — will sync later" : `${food.name} logged`, "success");
       refresh();
-    } catch {}
+    } catch (err) {
+      showToast(err.message || "Couldn't log meal", "error");
+    }
   }
 
   async function handleUpdateMeal(id, payload) {
-    await mealsAPI.updateLog(id, payload);
-    setSelectedMeal((prev) => prev ? { ...prev, ...payload } : prev);
-    refresh();
+    try {
+      await mealsAPI.updateLog(id, payload);
+      setSelectedMeal((prev) => prev ? { ...prev, ...payload } : prev);
+      refresh();
+    } catch (err) {
+      showToast(err.message || "Couldn't update meal", "error");
+    }
   }
 
   async function handleDeleteMealFromDetail(id) {
@@ -448,7 +481,9 @@ export default function MealsPage({ profile, onProfile }) {
       await mealsAPI.deleteLog(id);
       setSelectedMeal(null);
       refresh();
-    } catch {}
+    } catch (err) {
+      showToast(err.message || "Couldn't delete meal", "error");
+    }
   }
 
   async function handleSaveAsTemplate(meal) {
@@ -461,17 +496,25 @@ export default function MealsPage({ profile, onProfile }) {
         carbs_g: meal.carbs_g || 0,
         fat_g: meal.fat_g || 0,
       });
+      showToast("Saved as template", "success");
       refresh();
-    } catch {}
+    } catch (err) {
+      showToast(err.message || "Couldn't save template", "error");
+    }
   }
 
   function handleUpdateTargets(newTargets) {
-    setTargets((prev) => ({ ...prev, ...newTargets }));
+    setTargets((prev) => ({
+      ...prev,
+      ...(newTargets.daily_calorie_target ? { calories: newTargets.daily_calorie_target } : {}),
+      ...(newTargets.daily_protein_target ? { protein: newTargets.daily_protein_target } : {}),
+    }));
     userAPI.updateProfile({
       daily_calorie_target: newTargets.daily_calorie_target,
       daily_protein_target: newTargets.daily_protein_target,
       target_weight_kg: newTargets.target_weight_kg,
-    }).catch(() => {});
+    }).then(() => showToast("Targets updated", "success"))
+      .catch((err) => showToast(err.message || "Couldn't save targets", "error"));
   }
 
   return (

@@ -24,6 +24,10 @@ def _rate_limit_key(request: Request) -> str:
                 return f"user:{user_id}"
         except Exception:
             pass
+    # Behind Caddy all requests share the proxy's IP — use the forwarded client IP
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return get_remote_address(request)
 
 

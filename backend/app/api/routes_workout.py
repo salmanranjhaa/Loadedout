@@ -68,6 +68,17 @@ class WorkoutSaveRequest(BaseModel):
     ai_analysis: Optional[dict] = None
     calories_burned_est: Optional[int] = None
     energy_level: Optional[int] = None
+    # Client-local date (YYYY-MM-DD); server date is UTC and can be a day off
+    date: Optional[str] = None
+
+
+def _parse_client_date(raw: Optional[str]) -> date:
+    if raw:
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            pass
+    return date.today()
 
 
 @router.post("/analyze")
@@ -109,7 +120,7 @@ async def save_workout(
 
     log = WorkoutLog(
         user_id=user["sub"],
-        date=date.today(),
+        date=_parse_client_date(entry.date),
         workout_type=entry.workout_type.lower(),
         duration_minutes=entry.duration_minutes,
         intensity=entry.intensity,

@@ -12,6 +12,9 @@ engine = create_async_engine(
     echo=settings.DEBUG,
     pool_size=10,
     max_overflow=20,
+    # Stale connections (DB restarts, idle timeouts) otherwise surface as 500s
+    pool_pre_ping=True,
+    pool_recycle=1800,
 )
 
 # I use async_sessionmaker for all database operations

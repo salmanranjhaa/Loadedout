@@ -6,6 +6,7 @@ import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, userAPI, chatAPI } from "../u
 import MarkdownRenderer from "../components/ai/MarkdownRenderer";
 import QuickActions from "../components/ai/QuickActions";
 import VoiceInput from "../components/ai/VoiceInput";
+import { showToast } from "../utils/toast";
 
 const STORAGE_KEY = "lifeplan_chat_v1";
 
@@ -77,7 +78,7 @@ function MealActionCard({ data, onSave, onDismiss }) {
       await onSave({ ...edited, ingredients });
       setSaved(true);
     } catch (e) {
-      alert("Failed to save: " + e.message);
+      showToast("Failed to save: " + e.message, "error");
     }
     setSaving(false);
   }
@@ -333,7 +334,7 @@ function ScheduleActionCard({ data, onSave, onDismiss }) {
       await onSave(data);
       setSaved(true);
     } catch (e) {
-      alert(e.message);
+      showToast(e.message, "error");
     }
     setSaving(false);
   }
@@ -417,7 +418,7 @@ function WorkoutTemplateCard({ data, onSave, onDismiss }) {
       await onSave(data);
       setSaved(true);
     } catch (e) {
-      alert(e.message);
+      showToast(e.message, "error");
     }
     setSaving(false);
   }

@@ -3,6 +3,7 @@ import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots } from "../design/components";
 import { budgetAPI } from "../utils/api";
+import { showToast } from "../utils/toast";
 import CategoryDetailPage from "./details/CategoryDetailPage";
 
 const EXPENSE_CATS = [
@@ -196,7 +197,7 @@ function AddEntrySheet({ onClose, onAdded }) {
       });
       onAdded();
       onClose();
-    } catch (e) { alert(e?.message || "Failed to save"); }
+    } catch (e) { showToast(e?.message || "Failed to save", "error"); }
     setSaving(false);
   }
 

@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge } from "../../design/components";
-import { mealsAPI, aiAPI } from "../../utils/api";
+import { mealsAPI, aiAPI, foodAPI } from "../../utils/api";
+import { showToast } from "../../utils/toast";
 
 // ── Hardcoded food database (per 100g) ────────────────────────────────────────
 const FOOD_DB = [
@@ -137,8 +138,10 @@ function FoodRow({ food, onSelect }) {
 
 // ── Tab 1: Food Database ──────────────────────────────────────────────────────
 function DatabaseTab({ onSelect }) {
-  const [query,    setQuery]    = useState("");
-  const [selected, setSelected] = useState(null);
+  const [query,         setQuery]         = useState("");
+  const [selected,      setSelected]      = useState(null);
+  const [onlineResults, setOnlineResults] = useState([]);
+  const [onlineLoading, setOnlineLoading] = useState(false);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return FOOD_DB.slice(0, 12);
@@ -146,9 +149,30 @@ function DatabaseTab({ onSelect }) {
     return FOOD_DB.filter((f) => f.name.toLowerCase().includes(q));
   }, [query]);
 
+  // Debounced Open Food Facts search for anything beyond the built-in list
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 3) {
+      setOnlineResults([]);
+      setOnlineLoading(false);
+      return;
+    }
+    setOnlineLoading(true);
+    const handle = setTimeout(() => {
+      foodAPI.search(q)
+        .then((data) => setOnlineResults(data?.items || []))
+        .catch(() => setOnlineResults([]))
+        .finally(() => setOnlineLoading(false));
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [query]);
+
   if (selected) {
     return <PortionSelector food={selected} onBack={() => setSelected(null)} onAdd={(food) => { onSelect(food); setSelected(null); setQuery(""); }} />;
   }
+
+  const localNames = new Set(filtered.map((f) => f.name.toLowerCase()));
+  const online = onlineResults.filter((f) => !localNames.has(f.name.toLowerCase()));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -156,15 +180,28 @@ function DatabaseTab({ onSelect }) {
         <Icon name="search" size={14} color={T.textDim} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
           autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search 40+ foods…"
+          placeholder="Search any food or product…"
           style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px 10px 36px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
         />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "50vh", overflowY: "auto" }}>
-        {filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "24px 0", color: T.textDim, fontSize: 13 }}>No results for "{query}"</div>
-        ) : (
-          filtered.map((f) => <FoodRow key={f.name} food={f} onSelect={setSelected} />)
+        {filtered.map((f) => <FoodRow key={f.name} food={f} onSelect={setSelected} />)}
+
+        {query.trim().length >= 3 && (
+          <>
+            <div style={{ fontSize: 10, color: T.textDim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, padding: "8px 2px 2px" }}>
+              {onlineLoading ? "Searching food database…" : online.length > 0 ? "Food database" : ""}
+            </div>
+            {online.map((f) => (
+              <FoodRow key={`${f.name}-${f.barcode || f.brand || ""}`} food={{ ...f, name: f.brand ? `${f.name} (${f.brand})` : f.name }} onSelect={setSelected} />
+            ))}
+          </>
+        )}
+
+        {filtered.length === 0 && !onlineLoading && online.length === 0 && (
+          <div style={{ textAlign: "center", padding: "24px 0", color: T.textDim, fontSize: 13 }}>
+            No results for "{query}" — try the AI Estimate tab.
+          </div>
         )}
       </div>
     </div>
@@ -267,10 +304,10 @@ function AIEstimateTab({ onSelect }) {
         setResult(r);
         setMealName(text.trim().slice(0, 40));
       } else {
-        alert("AI couldn't estimate this. Try being more specific (e.g. '200g chicken breast, 1 cup rice').");
+        showToast("AI couldn't estimate this — try being more specific (e.g. '200g chicken breast, 1 cup rice')", "error");
       }
     } catch {
-      alert("Estimation failed. Are you online?");
+      showToast("Estimation failed. Are you online?", "error");
     }
     setLoading(false);
   }

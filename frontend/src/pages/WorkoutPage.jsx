@@ -3,6 +3,7 @@ import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Chip, PageHeader, PageScroll, SectionHead, IllustratedEmptyState, SkeletonCard, Badge } from "../design/components";
 import { workoutAPI } from "../utils/api";
+import { showToast } from "../utils/toast";
 import ExerciseBrowser from "../components/workout/ExerciseBrowser";
 import ActiveWorkout from "../components/workout/ActiveWorkout";
 import WorkoutHistory from "../components/workout/WorkoutHistory";
@@ -248,7 +249,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
     try {
       const r = await workoutAPI.analyze({ workout_type: type, duration_minutes: Number(duration), intensity, description: desc || undefined });
       setResult(r);
-    } catch (e) { alert(e.message || "Analyze failed"); }
+    } catch (e) { showToast(e.message || "Analyze failed", "error"); }
     setAnalyzing(false);
   }
 
@@ -256,10 +257,13 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
     if (!result) return;
     setLogging(true);
     try {
-      await workoutAPI.save({ workout_type: type, duration_minutes: Number(duration), intensity, description: desc || undefined, ai_analysis: result, calories_burned_est: result.calories_burned || result.calories });
+      const d = new Date();
+      const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      await workoutAPI.save({ workout_type: type, duration_minutes: Number(duration), intensity, description: desc || undefined, date: localDate, ai_analysis: result, calories_burned_est: result.calories_burned || result.calories });
+      showToast("Workout logged", "success");
       onRefresh?.();
       onClose();
-    } catch (e) { alert(e.message || "Log failed"); }
+    } catch (e) { showToast(e.message || "Log failed", "error"); }
     setLogging(false);
   }
 
@@ -311,16 +315,16 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
           <div style={{ background: T.elevated, border: `1px solid ${T.teal}44`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.teal, letterSpacing: 0.5, textTransform: "uppercase" }}>AI Analysis</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[["Calories", `${result.calories_burned || result.calories || "—"} kcal`], ["Recovery", result.recovery_time || "—"]].map(([l, v]) => (
+              {[["Calories", `${result.calories_burned || result.calories || "—"} kcal`], ["Recovery", result.recovery_hours ? `${result.recovery_hours}h` : result.recovery_time || "—"]].map(([l, v]) => (
                 <div key={l} style={{ background: T.surface, borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{l}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{v}</div>
                 </div>
               ))}
             </div>
-            {result.muscles_worked?.length > 0 && (
+            {(result.muscle_groups || result.muscles_worked)?.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {result.muscles_worked.map((m) => <span key={m} style={{ fontSize: 10, color: T.teal, background: T.teal + "18", borderRadius: 6, padding: "3px 8px" }}>{m}</span>)}
+                {(result.muscle_groups || result.muscles_worked).map((m) => <span key={m} style={{ fontSize: 10, color: T.teal, background: T.teal + "18", borderRadius: 6, padding: "3px 8px" }}>{m}</span>)}
               </div>
             )}
             {result.notes && <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>{result.notes}</div>}
@@ -439,8 +443,8 @@ function NewTemplateModal({ onClose, onSaved }) {
   }
 
   async function handleSave() {
-    if (!name.trim()) { alert("Give your template a name"); return; }
-    if (exercises.length === 0) { alert("Add at least one exercise"); return; }
+    if (!name.trim()) { showToast("Give your template a name", "error"); return; }
+    if (exercises.length === 0) { showToast("Add at least one exercise", "error"); return; }
     setSaving(true);
     try {
       await workoutAPI.saveTemplate({
@@ -564,7 +568,16 @@ export default function WorkoutPage({ profile, onProfile }) {
       const [logs, tmpl] = await Promise.all([workoutAPI.getAll(30), workoutAPI.getTemplates()]);
       const localHistory = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
       const apiLogs      = logs?.workouts || [];
-      const merged       = [...apiLogs, ...localHistory].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
+      // Live sessions are saved both locally and to the API — drop local copies
+      // that already exist server-side (same day, notes lead with the session name)
+      const localOnly = localHistory.filter((l) => {
+        const lDate = (l.date || l.loggedAt || "").slice(0, 10);
+        return !apiLogs.some((a) =>
+          (a.date || "").slice(0, 10) === lDate &&
+          (a.notes || "").startsWith(l.name || "")
+        );
+      });
+      const merged = [...apiLogs, ...localOnly].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
       setHistory(merged.slice(0, 50));
 
       // Merge API templates + local custom templates
@@ -593,10 +606,28 @@ export default function WorkoutPage({ profile, onProfile }) {
     })();
   }, []);
 
-  const streak    = profile?.workout_streak  || 4;
-  const totalDays = profile?.total_workout_days || 128;
-
   const workoutInsight = useMemo(() => analyzeWorkoutHistory(history), [history]);
+
+  // Real numbers from history — never invent streaks
+  const { streakDays, weekCount } = useMemo(() => {
+    const days = new Set(history.map((w) => (w.date || w.loggedAt || "").slice(0, 10)).filter(Boolean));
+    let streak = 0;
+    const cursor = new Date();
+    // A streak survives if today simply hasn't been trained yet
+    if (!days.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1);
+    while (days.has(cursor.toISOString().slice(0, 10))) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const week = history.filter((w) => new Date(w.date || w.loggedAt) >= weekAgo).length;
+    return { streakDays: streak, weekCount: week };
+  }, [history]);
+
+  const headerSubtitle = history.length === 0
+    ? "Let's get moving"
+    : `${weekCount} workout${weekCount !== 1 ? "s" : ""} this week${streakDays > 1 ? ` · ${streakDays}-day streak` : ""}`;
 
   function startSession(tpl) {
     setLiveTemplate(tpl || null);
@@ -627,7 +658,7 @@ export default function WorkoutPage({ profile, onProfile }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, position: "relative" }}>
-      <PageHeader title="Workout" subtitle={`Day ${streak} of your cut · ${totalDays} days in`} profile={profile} onProfile={onProfile} />
+      <PageHeader title="Workout" subtitle={headerSubtitle} profile={profile} onProfile={onProfile} />
 
       <PageScroll>
         <HeroCard
