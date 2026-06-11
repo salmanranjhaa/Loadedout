@@ -32,7 +32,9 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/api\//],
+        // The SW must never SPA-fallback file downloads or backend routes —
+        // navigating to /loadedout.apk used to render a blank app shell.
+        navigateFallbackDenylist: [/^\/api\//, /^\/mcp\//, /\.apk$/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json}"],
         runtimeCaching: [
           {

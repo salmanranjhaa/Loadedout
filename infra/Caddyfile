@@ -23,6 +23,9 @@
         header @no_cache Cache-Control "no-cache, must-revalidate"
         @icons path /favicon.ico /favicon-*.png /icon-*.png /apple-touch-icon.png
         header @icons Cache-Control "public, max-age=86400"
+        @apk path *.apk
+        header @apk Content-Disposition "attachment"
+        header @apk Cache-Control "no-cache"
 
         file_server
     }
