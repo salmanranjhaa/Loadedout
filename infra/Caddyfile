@@ -21,6 +21,8 @@
         header @immutable Cache-Control "public, max-age=31536000, immutable"
         @no_cache path / /index.html /sw.js /registerSW.js /manifest.webmanifest /manifest.json
         header @no_cache Cache-Control "no-cache, must-revalidate"
+        @icons path /favicon.ico /favicon-*.png /icon-*.png /apple-touch-icon.png
+        header @icons Cache-Control "public, max-age=86400"
 
         file_server
     }

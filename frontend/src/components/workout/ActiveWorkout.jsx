@@ -75,6 +75,10 @@ function estimate1RM(weight, reps) {
   return Math.round(weight * (1 + reps / 30));
 }
 
+// Shared by the header row and every set row — RPE only ever holds 1–10 so it
+// gets a fixed narrow track; KG and REPS split the remaining width.
+const SET_GRID_COLUMNS = "22px 34px 1fr 1fr 46px 40px";
+
 // ── Focusable set input ───────────────────────────────────────────────────────
 function SetInput({ value, onChange, placeholder, inputMode = "decimal", color, min, max }) {
   const [focused, setFocused] = useState(false);
@@ -120,8 +124,11 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "28px 44px 1fr 1fr 1fr 44px",
-      gap: 6,
+      // KG and REPS are the primary touch targets — keep every fixed column
+      // (set #, warmup, RPE, done) as narrow as usable so the flexible ones
+      // get real width on a 360px phone.
+      gridTemplateColumns: SET_GRID_COLUMNS,
+      gap: 5,
       alignItems: "center",
       background: set.done ? `${T.teal}14` : set.isWarmup ? `${T.amber}0C` : "transparent",
       borderRadius: 10,
@@ -174,7 +181,7 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
       <button
         onClick={() => onToggleDone(exIndex, setIndex)}
         style={{
-          height: 44, width: 44, borderRadius: 10,
+          height: 44, width: 40, borderRadius: 10,
           background: set.done ? T.teal : T.elevated,
           border: `1.5px solid ${set.done ? T.teal : T.border}`,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -538,7 +545,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       )}
 
       {/* Exercises */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 12px", display: "flex", flexDirection: "column", gap: 16 }}>
         {exercises.length === 0 && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: T.textDim, fontSize: 14 }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>💪</div>
@@ -600,9 +607,9 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
               )}
 
               {/* Sets */}
-              <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ padding: "10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Column headers */}
-                <div style={{ display: "grid", gridTemplateColumns: "28px 44px 1fr 1fr 1fr 44px", gap: 6, paddingBottom: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: SET_GRID_COLUMNS, gap: 5, paddingBottom: 6 }}>
                   {[" ", "W", "KG", "REPS", "RPE", ""].map((h, i) => (
                     <div key={i} style={{ fontSize: 10, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, textAlign: "center" }}>{h}</div>
                   ))}
