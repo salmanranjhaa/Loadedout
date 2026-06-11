@@ -563,7 +563,11 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
           })();
 
           return (
-            <div key={exIndex} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, overflow: "hidden" }}>
+            // flexShrink 0 is load-bearing: as flex children of the scroll
+            // column these cards otherwise SHRINK to fit the viewport when
+            // there are many exercises, and overflow:hidden clips away the
+            // set-input rows instead of letting the list scroll.
+            <div key={exIndex} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, overflow: "hidden", flexShrink: 0 }}>
               {/* Exercise header */}
               <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, background: T.elevated }}>
                 <div style={{ width: 30, height: 30, borderRadius: 9, background: T.teal + "22", display: "flex", alignItems: "center", justifyContent: "center", color: T.teal, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -642,7 +646,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
         {/* Add exercise */}
         <button
           onClick={() => setShowBrowser(true)}
-          style={{ padding: "13px 0", background: T.elevated, border: `1px dashed ${T.teal}55`, borderRadius: T.rCard, color: T.teal, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          style={{ padding: "13px 0", flexShrink: 0, background: T.elevated, border: `1px dashed ${T.teal}55`, borderRadius: T.rCard, color: T.teal, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
         >
           <Icon name="plus" size={14} /> Add Exercise
         </button>
