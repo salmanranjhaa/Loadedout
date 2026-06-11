@@ -584,18 +584,20 @@ export default function WorkoutPage({ profile, onProfile }) {
       const apiTemplates   = tmpl?.templates || [];
       const localCustom    = JSON.parse(localStorage.getItem("lo_custom_templates") || "[]");
       const allTemplates   = [...apiTemplates, ...localCustom];
-      if (allTemplates.length) {
-        setTemplates(
-          allTemplates.map((t) => ({
+      // Keep `exercises` as the real array — ActiveWorkout maps over it
+      setTemplates(
+        allTemplates.map((t) => {
+          const exList = Array.isArray(t.exercises) ? t.exercises : [];
+          return {
             ...t,
+            exercises: exList,
             tag:      (t.workout_type || "strength").toUpperCase(),
             tagColor: typeColor(t.workout_type || "strength"),
-            exercises: t.exercises?.length || 0,
             duration: t.estimated_duration ? `${t.estimated_duration} min` : "—",
-            muscles:  t.exercises?.slice(0, 3).map((e) => e.name) || [],
-          }))
-        );
-      }
+            muscles:  exList.slice(0, 3).map((e) => (typeof e === "string" ? e : e.name)).filter(Boolean),
+          };
+        })
+      );
     } catch {}
   }
 

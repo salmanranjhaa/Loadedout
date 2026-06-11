@@ -34,6 +34,11 @@ class ChatMessage(BaseModel):
 def _profile_dict(user_profile: User) -> dict:
     return {
         "username": user_profile.username,
+        "full_name": user_profile.full_name,
+        "activity_level": user_profile.activity_level,
+        "fitness_goal": user_profile.fitness_goal,
+        "goal_pace_kg_per_week": user_profile.goal_pace_kg_per_week,
+        "training_preferences": user_profile.training_preferences,
         "current_weight_kg": user_profile.current_weight_kg,
         "target_weight_kg": user_profile.target_weight_kg,
         "height_cm": user_profile.height_cm,

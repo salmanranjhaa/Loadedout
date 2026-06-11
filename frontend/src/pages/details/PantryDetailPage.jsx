@@ -2,6 +2,7 @@ import { useState } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Card, DetailHeader, PageScroll } from "../../design/components";
+import { inventoryAPI } from "../../utils/api";
 
 function ExpiryBadge({ daysLeft }) {
   if (daysLeft === null || daysLeft === undefined) return null;
@@ -20,27 +21,35 @@ function ExpiryBadge({ daysLeft }) {
   );
 }
 
-export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
+export default function PantryDetailPage({ item = {}, onBack, onDelete, onChanged }) {
   const {
-    name = "Greek Yogurt",
-    category = "Dairy",
-    quantity = 2,
-    unit = "containers",
+    name = "Item",
+    category = "Other",
+    quantity = 0,
+    unit = "",
     location = "Fridge",
     expiry_date = null,
     notes = "",
     nutrition = null,
   } = item;
 
-  const [qty, setQty] = useState(quantity);
-  const [editing, setEditing] = useState(false);
+  const [qty, setQty] = useState(quantity ?? 0);
+
+  // Persist quantity changes (optimistic — revert silently is not worth it here)
+  function changeQty(delta) {
+    setQty((q) => {
+      const next = Math.max(0, q + delta);
+      if (item.id) inventoryAPI.update(item.id, { quantity: next }).then(() => onChanged?.()).catch(() => {});
+      return next;
+    });
+  }
 
   // Calculate days until expiry
   const daysLeft = expiry_date
     ? Math.floor((new Date(expiry_date) - new Date()) / 86400000)
     : null;
 
-  const macros = nutrition || { kcal: 100, P: 10, C: 8, F: 2 };
+  const macros = nutrition;
 
   const LOCATION_COLORS = {
     Fridge: T.teal,
@@ -49,12 +58,6 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
     Counter: "#FF9F43",
   };
   const locColor = LOCATION_COLORS[location] || T.textMuted;
-
-  const usageHistory = [
-    { date: "Apr 22", action: "Used 1", remaining: qty + 1 },
-    { date: "Apr 19", action: "Restocked +3", remaining: qty + 2 },
-    { date: "Apr 15", action: "Used 1", remaining: qty - 1 },
-  ];
 
   return (
     <div
@@ -68,14 +71,6 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
         onBack={onBack}
         title={name}
         subtitle={`${category} · ${location}`}
-        trailing={
-          <button
-            onClick={() => setEditing(!editing)}
-            style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, color: T.text, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <Icon name="edit" size={15} />
-          </button>
-        }
       />
 
       <PageScroll padBottom={100}>
@@ -107,7 +102,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", alignItems: "center", gap: 0, background: T.elevated, borderRadius: 10, border: `1px solid ${T.border}`, overflow: "hidden" }}>
                 <button
-                  onClick={() => setQty(q => Math.max(0, q - 1))}
+                  onClick={() => changeQty(-1)}
                   style={{ width: 36, height: 36, border: "none", background: "transparent", color: T.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                   <Icon name="minus" size={16} />
@@ -116,7 +111,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
                   {qty}
                 </div>
                 <button
-                  onClick={() => setQty(q => q + 1)}
+                  onClick={() => changeQty(1)}
                   style={{ width: 36, height: 36, border: "none", background: "transparent", color: T.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                   <Icon name="plus" size={16} />
@@ -136,8 +131,8 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
               { label: "Storage", value: location, icon: "bolt" },
               { label: "Expires", value: expiry_date || "No date set", icon: "calendar", highlight: daysLeft !== null && daysLeft <= 3 },
               { label: "Notes", value: notes || "None", icon: "edit" },
-            ].map(({ label, value, icon, highlight }) => (
-              <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 10, marginBottom: 10, borderBottom: `0.5px solid ${T.border}` }}>
+            ].map(({ label, value, icon, highlight }, i, arr) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: i < arr.length - 1 ? 10 : 0, marginBottom: i < arr.length - 1 ? 10 : 0, borderBottom: i < arr.length - 1 ? `0.5px solid ${T.border}` : "none" }}>
                 <div style={{ width: 28, height: 28, borderRadius: 8, background: T.elevated, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Icon name={icon} size={14} color={T.textDim} />
                 </div>
@@ -145,15 +140,6 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
                 <span style={{ fontSize: 12, fontWeight: 600, color: highlight ? T.amber : T.text }}>{value}</span>
               </div>
             ))}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: T.elevated, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Icon name="analytics" size={14} color={T.textDim} />
-              </div>
-              <span style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>Per serving</span>
-              <span style={{ fontSize: 11, fontFamily: T.fontMono, color: T.text, fontWeight: 600 }}>
-                {macros.kcal}kcal · {macros.P}P {macros.C}C {macros.F}F
-              </span>
-            </div>
           </Card>
         </div>
 
@@ -179,58 +165,33 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete }) {
           </div>
         )}
 
-        {/* Usage log */}
-        <div style={{ padding: "0 16px 16px" }}>
-          <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10, paddingLeft: 4 }}>Usage Log</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {usageHistory.map((h, i) => (
-              <Card key={i} style={{ padding: "11px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: 9999, background: h.action.startsWith("Used") ? T.amber : T.teal, flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{h.action}</div>
-                    <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{h.date}</div>
-                  </div>
-                  <div style={{ fontSize: 12, fontFamily: T.fontMono, color: T.textMuted }}>{h.remaining} left</div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-
-        {/* AI suggestion */}
-        <div style={{ padding: "0 16px 20px" }}>
-          <div style={{
-            borderRadius: 14, padding: 14, display: "flex", gap: 10,
-            background: `linear-gradient(90deg, ${T.violet}18, ${T.teal}18)`,
-            border: `1px solid ${T.violet}44`,
-          }}>
-            <div style={{ width: 28, height: 28, borderRadius: 9999, background: T.violet, display: "flex", alignItems: "center", justifyContent: "center", color: "#0A0A0F", flexShrink: 0 }}>
-              <Icon name="sparkle" size={15} strokeWidth={2.4} />
-            </div>
-            <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.55 }}>
-              {daysLeft !== null && daysLeft <= 3
-                ? <><b style={{ color: T.amber }}>{name} expires {daysLeft < 0 ? "already" : `in ${daysLeft}d`}</b> — consider adding it to tonight's meal plan before it goes to waste.</>
-                : <>You use {name} about <b style={{ color: T.text }}>twice a week</b>. At current pace, you'll run out in ~{Math.round(qty / 2)} weeks — add to shopping list now.</>
-              }
+        {/* Expiry warning — only when real expiry data says so */}
+        {daysLeft !== null && daysLeft <= 3 && (
+          <div style={{ padding: "0 16px 20px" }}>
+            <div style={{
+              borderRadius: 14, padding: 14, display: "flex", gap: 10,
+              background: `linear-gradient(90deg, ${T.amber}18, ${T.teal}18)`,
+              border: `1px solid ${T.amber}44`,
+            }}>
+              <div style={{ width: 28, height: 28, borderRadius: 9999, background: T.amber, display: "flex", alignItems: "center", justifyContent: "center", color: "#0A0A0F", flexShrink: 0 }}>
+                <Icon name="sparkle" size={15} strokeWidth={2.4} />
+              </div>
+              <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.55 }}>
+                <b style={{ color: T.amber }}>{name} {daysLeft < 0 ? "has expired" : `expires in ${daysLeft}d`}</b> — use it in a meal soon so it doesn't go to waste.
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </PageScroll>
 
       {/* Sticky actions */}
       <div style={{ position: "absolute", left: 16, right: 16, bottom: 24, display: "flex", gap: 8, zIndex: 24 }}>
         <button
           onClick={onDelete}
-          style={{ width: 52, height: 52, borderRadius: 14, background: T.elevated, border: `1px solid ${T.border}`, color: T.negative, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{ flex: 1, height: 52, borderRadius: 14, background: T.elevated, border: `1px solid ${T.negative}55`, color: T.negative, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
         >
-          <Icon name="trash" size={17} />
-        </button>
-        <button style={{ flex: 1, height: 52, borderRadius: 14, background: T.elevated, border: `1px solid ${T.border}`, color: T.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-          Add to Shopping List
-        </button>
-        <button style={{ flex: 1, height: 52, borderRadius: 14, background: T.teal, border: "none", color: "#0A0A0F", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 10px 30px ${T.teal}55` }}>
-          Use in Meal
+          <Icon name="trash" size={16} color={T.negative} />
+          Remove from Pantry
         </button>
       </div>
     </div>

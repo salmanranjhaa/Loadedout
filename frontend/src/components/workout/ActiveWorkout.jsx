@@ -265,7 +265,7 @@ function WorkoutSummary({ workout, onClose }) {
 export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   // Pre-populate exercises from last performance when loading from template
   const [exercises, setExercises] = useState(() => {
-    if (template?.exercises) {
+    if (Array.isArray(template?.exercises)) {
       return template.exercises.map((ex) => {
         const name      = typeof ex === "string" ? ex : ex.name;
         const lastSets  = getLastPerformance(name);
@@ -290,7 +290,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
 
   // Belt-and-suspenders: if lazy initializer ran before template arrived, sync now
   useEffect(() => {
-    if (!open || !template?.exercises?.length || exercises.length > 0) return;
+    if (!open || !Array.isArray(template?.exercises) || !template.exercises.length || exercises.length > 0) return;
     setExercises(template.exercises.map((ex) => {
       const name      = typeof ex === "string" ? ex : (ex.name || String(ex));
       const lastSets  = getLastPerformance(name);

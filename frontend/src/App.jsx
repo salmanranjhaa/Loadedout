@@ -115,6 +115,12 @@ export default function App() {
       setProfileLoading(true);
       try {
         const p = await userAPI.getProfile();
+        if (p?.has_avatar) {
+          try {
+            const av = await userAPI.getAvatar();
+            p.avatar_data = `data:${av.mime_type};base64,${av.image_base64}`;
+          } catch {}
+        }
         if (!cancelled) setProfile(p);
       } catch (err) {
         // Only end the session on real auth failures — a flaky network or a
@@ -151,6 +157,19 @@ export default function App() {
     clearToken();
     setProfile(null);
     setLoggedIn(false);
+  }
+
+  async function refreshProfile() {
+    try {
+      const p = await userAPI.getProfile();
+      if (p?.has_avatar) {
+        try {
+          const av = await userAPI.getAvatar();
+          p.avatar_data = `data:${av.mime_type};base64,${av.image_base64}`;
+        } catch {}
+      }
+      setProfile(p);
+    } catch {}
   }
 
   if (!loggedIn) return <LoginPage onLogin={() => setLoggedIn(true)} />;
@@ -293,7 +312,7 @@ export default function App() {
           profile={profile}
           onClose={() => setShowProfile(false)}
           onLogout={handleLogout}
-          onProfileUpdate={(p) => setProfile(p)}
+          onProfileUpdate={refreshProfile}
           onFullProfile={() => { setShowProfile(false); setShowFullProfile(true); }}
         />
       )}
@@ -304,7 +323,7 @@ export default function App() {
           profile={profile}
           onClose={() => setShowFullProfile(false)}
           onLogout={handleLogout}
-          onProfileUpdate={(p) => setProfile(p)}
+          onProfileUpdate={refreshProfile}
         />
       )}
 

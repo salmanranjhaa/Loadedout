@@ -25,16 +25,6 @@ const CAT_BUDGETS = { food: 400, rent: 1200, transport: 150, fitness: 80, fun: 2
 
 function getCat(id) { return CATS.find(c => c.id === id) || CATS[5]; }
 
-const MOCK_SUMMARY = {
-  income: 0, expenses: 0, net: 0,
-  by_category: {},
-  sparkline: [0, 0, 0, 0, 0, 0],
-  week_bars: [0, 0, 0, 0, 0, 0, 0],
-  week_avg: 0,
-};
-
-const MOCK_ENTRIES = [];
-
 function groupByDate(entries) {
   const groups = {};
   for (const e of entries) {
@@ -262,7 +252,7 @@ function AddEntrySheet({ onClose, onAdded }) {
 }
 
 export default function BudgetPage({ profile, onProfile }) {
-  const [entries, setEntries] = useState(MOCK_ENTRIES);
+  const [entries, setEntries] = useState([]);
   const [activeDonut, setActiveDonut] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -372,7 +362,7 @@ export default function BudgetPage({ profile, onProfile }) {
               const pct = Math.min(spent / budget, 1);
               const over = spent > budget;
               return (
-                <div key={cat.id} onClick={() => setSelectedCategory({ ...cat, spent, budget, txCount: Math.round(spent / 40) + 2 })} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 13px", cursor: "pointer" }}>
+                <div key={cat.id} onClick={() => setSelectedCategory({ ...cat, spent, budget })} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 13px", cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{cat.label}</span>
@@ -446,6 +436,7 @@ export default function BudgetPage({ profile, onProfile }) {
       {selectedCategory && (
         <CategoryDetailPage
           category={selectedCategory}
+          entries={expenseEntries.filter((e) => e.category === selectedCategory.id)}
           onBack={() => setSelectedCategory(null)}
         />
       )}

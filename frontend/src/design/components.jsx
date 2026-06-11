@@ -152,9 +152,12 @@ export function PageHeader({ title, subtitle, onProfile, trailing, profile }) {
           letterSpacing: 0.3,
           flexShrink: 0,
           fontFamily: "inherit",
+          overflow: "hidden",
         }}
       >
-        {initials}
+        {profile?.avatar_data
+          ? <img src={profile.avatar_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : initials}
       </button>
     </div>
   );

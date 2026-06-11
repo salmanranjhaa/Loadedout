@@ -341,6 +341,10 @@ export const aiAPI = {
 export const userAPI = {
   getProfile: () => request("/user/profile"),
   updateProfile: (data) => request("/user/profile", { method: "PUT", body: JSON.stringify(data) }),
+  uploadAvatar: (image_base64, mime_type = "image/jpeg") =>
+    request("/user/avatar", { method: "POST", body: JSON.stringify({ image_base64, mime_type }) }),
+  getAvatar: () => request("/user/avatar"),
+  deleteAvatar: () => request("/user/avatar", { method: "DELETE" }),
 };
 
 export const chatAPI = {

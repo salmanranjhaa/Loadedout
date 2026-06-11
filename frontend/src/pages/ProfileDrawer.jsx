@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
 import {
-  PageScroll, SettingsRow, SettingsGroup, Toggle, Chip,
+  PageScroll, SettingsRow, SettingsGroup,
 } from "../design/components";
 import { userAPI } from "../utils/api";
 
@@ -149,11 +149,12 @@ function GamificationSection({ profile }) {
 }
 
 // ── Avatar hero ────────────────────────────────────────────────────────────────
-function AvatarHero({ profile }) {
+function AvatarHero({ profile, streak }) {
   const name = profile?.full_name || profile?.username || "Athlete";
   const email = profile?.email || "";
-  const daysIn = profile?.days_active || profile?.streak_days || 128;
-  const streak = profile?.current_streak || 42;
+  const daysIn = profile?.member_since
+    ? Math.max(1, Math.floor((Date.now() - new Date(profile.member_since)) / 86400000))
+    : null;
 
   const initials = name
     .split(" ")
@@ -166,38 +167,44 @@ function AvatarHero({ profile }) {
     <div style={{ padding: "28px 20px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
       {/* Avatar circle */}
       <div style={{
-        width: 80, height: 80, borderRadius: 9999,
+        width: 80, height: 80, borderRadius: 9999, overflow: "hidden",
         background: `conic-gradient(from 135deg, ${T.violet}, ${T.teal}, ${T.violet})`,
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 26, fontWeight: 800, color: "#0A0A0F",
         letterSpacing: -0.5,
         boxShadow: `0 0 0 3px ${T.surface}, 0 0 0 5px ${T.border}, 0 8px 24px ${T.violet}44`,
       }}>
-        {initials}
+        {profile?.avatar_data
+          ? <img src={profile.avatar_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : initials}
       </div>
 
       {/* Name */}
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: T.text, letterSpacing: -0.4 }}>{name}</div>
         <div style={{ fontSize: 13, color: T.textMuted, marginTop: 2 }}>{email}</div>
-        <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontFamily: T.fontMono }}>
-          {daysIn} days in
-        </div>
+        {daysIn != null && (
+          <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontFamily: T.fontMono }}>
+            {daysIn} days in
+          </div>
+        )}
       </div>
 
-      {/* Streak chip */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6,
-        padding: "5px 12px",
-        background: `${T.amber}18`,
-        border: `1px solid ${T.amber}44`,
-        borderRadius: 9999,
-      }}>
-        <Icon name="fire" size={14} color={T.amber} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: T.amber }}>
-          {streak} day streak
-        </span>
-      </div>
+      {/* Streak chip — only when there is a real streak */}
+      {streak > 1 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "5px 12px",
+          background: `${T.amber}18`,
+          border: `1px solid ${T.amber}44`,
+          borderRadius: 9999,
+        }}>
+          <Icon name="fire" size={14} color={T.amber} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.amber }}>
+            {streak} day streak
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -245,26 +252,23 @@ function SupplementItem({ sup, last }) {
 }
 
 // ── Main drawer ────────────────────────────────────────────────────────────────
-export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpdate, onFullProfile }) {
-  const [notifSettings, setNotifSettings] = useState({
-    mealReminders: true,
-    workoutReminders: true,
-    supplementReminders: false,
-    weeklySummary: true,
-  });
-
-  function toggle(key) {
-    setNotifSettings(prev => ({ ...prev, [key]: !prev[key] }));
+// Flatten supplements that may be a legacy {morning:[],...} dict or a list
+function flattenSupplements(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    return Object.entries(raw).flatMap(([bucket, items]) =>
+      (Array.isArray(items) ? items : []).map(s =>
+        typeof s === "string" ? { name: s, times: [bucket.replace(/_/g, " ")] } : { times: [bucket.replace(/_/g, " ")], ...s }
+      )
+    );
   }
+  return [];
+}
 
+export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpdate, onFullProfile }) {
   const p = profile || {};
-  const supplements = Array.isArray(p.supplements) && p.supplements.length > 0
-    ? p.supplements
-    : [
-        { name: "Magnesium", dose: "400mg", times: ["Evening"] },
-        { name: "Vitamin D", dose: "2000 IU", times: ["Morning"] },
-        { name: "Omega-3", dose: "1g", times: ["Morning"] },
-      ];
+  const supplements = flattenSupplements(p.supplements);
+  const stats = useMemo(() => getWorkoutStats(), []);
 
   const fmt = (v, unit = "") => v != null ? `${v}${unit}` : "—";
 
@@ -308,7 +312,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
 
       <PageScroll padBottom={60}>
         {/* Hero */}
-        <AvatarHero profile={p} />
+        <AvatarHero profile={p} streak={stats.streak} />
 
         {/* Gamification */}
         <GamificationSection profile={p} />
@@ -344,10 +348,10 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
         {/* Body metrics */}
         <SettingsGroup title="Body metrics">
           <SettingsRow label="Height" value={fmt(p.height_cm, " cm")} />
-          <SettingsRow label="Current weight" value={fmt(p.weight_kg, " kg")} />
-          <SettingsRow label="Goal weight" value={fmt(p.goal_weight_kg, " kg")} />
-          <SettingsRow label="Biological sex" value={p.sex || p.biological_sex || "—"} />
-          <SettingsRow label="Activity level" value={p.activity_level || "—"} last />
+          <SettingsRow label="Current weight" value={fmt(p.current_weight_kg, " kg")} />
+          <SettingsRow label="Goal weight" value={fmt(p.target_weight_kg, " kg")} />
+          <SettingsRow label="Biological sex" value={(p.gender || "—").replace(/_/g, " ")} />
+          <SettingsRow label="Activity level" value={(p.activity_level || "—").replace(/_/g, " ")} last />
         </SettingsGroup>
 
         {/* Macro targets */}
@@ -359,46 +363,18 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
         </SettingsGroup>
 
         {/* Supplements */}
-        <div style={{ padding: "0 20px 14px" }}>
-          <div style={{ fontSize: 11, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 8, paddingLeft: 4 }}>
-            Supplements
+        {supplements.length > 0 && (
+          <div style={{ padding: "0 20px 14px" }}>
+            <div style={{ fontSize: 11, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 8, paddingLeft: 4 }}>
+              Supplements
+            </div>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden" }}>
+              {supplements.map((sup, i) => (
+                <SupplementItem key={i} sup={sup} last={i === supplements.length - 1} />
+              ))}
+            </div>
           </div>
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden" }}>
-            {supplements.map((sup, i) => (
-              <SupplementItem key={i} sup={sup} last={i === supplements.length - 1} />
-            ))}
-            {/* Add supplement */}
-            <button style={{
-              width: "100%", padding: "10px 14px",
-              display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
-              background: "none", border: "none",
-              borderTop: `1px dashed ${T.border}`,
-            }}>
-              <Icon name="plus" size={14} color={T.textDim} />
-              <span style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontFamily }}>Add supplement</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Notifications */}
-        <SettingsGroup title="Notifications">
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Meal reminders</span>
-            <Toggle on={notifSettings.mealReminders} onChange={() => toggle("mealReminders")} />
-          </div>
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Workout reminders</span>
-            <Toggle on={notifSettings.workoutReminders} onChange={() => toggle("workoutReminders")} />
-          </div>
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Supplement reminders</span>
-            <Toggle on={notifSettings.supplementReminders} onChange={() => toggle("supplementReminders")} />
-          </div>
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Weekly summary</span>
-            <Toggle on={notifSettings.weeklySummary} onChange={() => toggle("weeklySummary")} />
-          </div>
-        </SettingsGroup>
+        )}
 
         {/* Connected services */}
         <SettingsGroup title="Connected services">
@@ -409,17 +385,17 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
             }}>
               <Icon name="google" size={14} color={T.textMuted} />
             </div>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Google Calendar</span>
-            <span style={{ fontSize: 11, color: T.teal, fontWeight: 600 }}>Connected</span>
-            <Icon name="chev-right" size={13} color={T.textDim} />
+            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Google</span>
+            <span style={{ fontSize: 11, color: p.google_connected ? T.teal : T.textDim, fontWeight: 600 }}>
+              {p.google_connected ? "Connected" : "Not connected"}
+            </span>
           </div>
         </SettingsGroup>
 
         {/* Preferences */}
         <SettingsGroup title="Preferences">
-          <SettingsRow label="Currency" value="CHF" />
-          <SettingsRow label="Units" value="Metric" />
-          <SettingsRow label="Accent color" value="Teal" last />
+          <SettingsRow label="Currency" value={p.preferred_currency || "CHF"} />
+          <SettingsRow label="Units" value="Metric" last />
         </SettingsGroup>
 
         {/* Full settings CTA */}

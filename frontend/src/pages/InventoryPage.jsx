@@ -25,19 +25,6 @@ const CAT_MAP = {
 
 function getCatMeta(id) { return CAT_MAP[id] || CAT_MAP.other; }
 
-const MOCK_ITEMS = [
-  { id: "i1", name: "Chicken Breast",   category: "protein", quantity: 600,  unit: "g",       expiry_days: 2,  expiry_date: "2025-04-26" },
-  { id: "i2", name: "Greek Yogurt",     category: "dairy",   quantity: 500,  unit: "g",       expiry_days: 5,  expiry_date: "2025-04-29" },
-  { id: "i3", name: "Spinach",          category: "produce", quantity: 200,  unit: "g",       expiry_days: 3,  expiry_date: "2025-04-27" },
-  { id: "i4", name: "Oats",             category: "grains",  quantity: 800,  unit: "g",       expiry_days: 90, expiry_date: "2025-07-20" },
-  { id: "i5", name: "Eggs",             category: "protein", quantity: 12,   unit: "pieces",  expiry_days: 14, expiry_date: "2025-05-08" },
-  { id: "i6", name: "Brown Rice",       category: "grains",  quantity: 500,  unit: "g",       expiry_days: 120, expiry_date: "2025-08-20" },
-  { id: "i7", name: "Canned Tuna",      category: "protein", quantity: 4,    unit: "cans",    expiry_days: 365, expiry_date: "2026-04-20" },
-  { id: "i8", name: "Broccoli",         category: "produce", quantity: 1,    unit: "pieces",  expiry_days: 1,  expiry_date: "2025-04-25" },
-  { id: "i9", name: "Whole Milk",       category: "dairy",   quantity: 1,    unit: "L",       expiry_days: 4,  expiry_date: "2025-04-28" },
-  { id: "i10", name: "Olive Oil",       category: "pantry",  quantity: 500,  unit: "ml",      expiry_days: 180, expiry_date: "2025-10-20" },
-];
-
 function AddItemSheet({ onClose, onAdded }) {
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
@@ -143,7 +130,7 @@ function ItemCard({ item, onClick }) {
 }
 
 export default function InventoryPage({ profile, onProfile }) {
-  const [items, setItems] = useState(MOCK_ITEMS);
+  const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -153,9 +140,9 @@ export default function InventoryPage({ profile, onProfile }) {
     (async () => {
       try {
         const data = await inventoryAPI.getAll();
-        if (data?.items?.length) setItems(data.items);
+        if (data?.items) setItems(data.items);
       } catch {
-        // use mock
+        // leave empty — empty state renders below
       } finally {
         setLoading(false);
       }
@@ -244,6 +231,7 @@ export default function InventoryPage({ profile, onProfile }) {
             location: selectedItem.location || "Fridge",
           }}
           onBack={() => setSelectedItem(null)}
+          onChanged={reload}
           onDelete={() => {
             setItems(prev => prev.filter(i => i.id !== selectedItem.id));
             setSelectedItem(null);

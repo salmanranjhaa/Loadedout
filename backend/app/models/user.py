@@ -12,6 +12,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="user", server_default="user")
     google_sub = Column(String(128), unique=True, nullable=True, index=True)
+    full_name = Column(String(120), nullable=True)
+    # Mongo ObjectId of the stored profile picture (avatars collection)
+    avatar_id = Column(String(64), nullable=True)
 
     # I keep physical stats nullable until a user explicitly sets them.
     current_weight_kg = Column(Float, nullable=True)
@@ -19,6 +22,21 @@ class User(Base):
     height_cm = Column(Float, nullable=True)
     age = Column(Integer, nullable=True)
     gender = Column(String(32), nullable=True)
+
+    # Personalization the AI coach uses to build plans and feedback.
+    activity_level = Column(String(32), nullable=True)   # sedentary|light|moderate|very_active|athlete
+    fitness_goal = Column(String(32), nullable=True)     # lose_fat|maintain|build_muscle|recomp|performance
+    goal_pace_kg_per_week = Column(Float, nullable=True)  # negative = losing
+    training_preferences = Column(JSON, default=lambda: {
+        "days_per_week": None,
+        "session_length_min": None,
+        "experience_level": None,   # beginner|intermediate|advanced
+        "preferred_time": None,     # morning|lunch|evening
+        "equipment": [],            # e.g. ["full_gym", "dumbbells", "bands"]
+        "focus_sports": [],         # e.g. ["strength", "hyrox", "running"]
+        "injuries": [],             # free-text strings
+        "notes": "",
+    })
 
     # I store dietary preferences as JSON for flexibility.
     dietary_preferences = Column(JSON, default=lambda: {

@@ -61,12 +61,21 @@ export default function Onboarding({ profile, onComplete, onSkip }) {
     if (!targets) return;
     setSaving(true);
     try {
+      const activityLevel =
+        form.activity <= 1.2 ? "sedentary" :
+        form.activity <= 1.375 ? "light" :
+        form.activity <= 1.55 ? "moderate" :
+        form.activity <= 1.725 ? "very_active" : "athlete";
       await userAPI.updateProfile({
         current_weight_kg: parseFloat(form.weight),
         height_cm: parseFloat(form.height),
         age: parseInt(form.age),
         gender: form.gender,
         target_weight_kg: form.targetWeight ? parseFloat(form.targetWeight) : null,
+        activity_level: activityLevel,
+        fitness_goal: form.pace < 0 ? "lose_fat" : form.pace > 0 ? "build_muscle" : "maintain",
+        // pace is stored as kcal/day in the form; convert to kg/week (7700 kcal ≈ 1 kg)
+        goal_pace_kg_per_week: Math.round((form.pace * 7 / 7700) * 100) / 100,
         daily_calorie_target: targets.calories,
         daily_protein_target: targets.protein,
         daily_carb_target: targets.carbs,
