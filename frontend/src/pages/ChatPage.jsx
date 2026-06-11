@@ -4,15 +4,11 @@ import { T } from "../design/tokens";
 import { Chip, PageHeader, LoadingDots } from "../design/components";
 import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, userAPI, chatAPI, streamChat } from "../utils/api";
 import MarkdownRenderer from "../components/ai/MarkdownRenderer";
-import QuickActions from "../components/ai/QuickActions";
+import { PromptCards } from "../components/ai/QuickActions";
 import VoiceInput from "../components/ai/VoiceInput";
 import { showToast } from "../utils/toast";
 
 const STORAGE_KEY = "lifeplan_chat_v1";
-
-function makeInitialMessage(name = "there") {
-  return { role: "assistant", content: `Hey ${name}! How can I help you today?` };
-}
 
 function buildContext(profile) {
   const today = new Date().toISOString().slice(0, 10);
@@ -535,14 +531,21 @@ export default function ChatPage({ profile, onProfile }) {
   const [messages, setMessages] = useState(() => {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Drop the legacy auto-greeting so the welcome screen can show instead
+        return parsed.filter((m, i) => !(i === 0 && m.role === "assistant" && m.content?.startsWith("Hey ")));
+      }
     } catch {}
-    return [makeInitialMessage(profile?.full_name)];
+    return [];
   });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [username, setUsername] = useState(profile?.full_name || "there");
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const isEmpty = !messages.some((m) => m.role === "user");
+  const firstName = (profile?.full_name || profile?.username || "there").split(" ")[0];
 
   useEffect(() => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
@@ -553,6 +556,19 @@ export default function ChatPage({ profile, onProfile }) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
+
+  // Auto-grow the composer with its content (capped, then scrolls)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }, [input]);
+
+  function newChat() {
+    setMessages([]);
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
 
   function actionFields(action) {
     if (!action?.action_type) return {};
@@ -650,33 +666,59 @@ export default function ChatPage({ profile, onProfile }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
-      <PageHeader title="AI Assistant" subtitle="Your personal fitness coach" profile={profile} onProfile={onProfile} />
-
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        <div ref={scrollRef} style={{ height: "100%", overflowY: "auto", padding: "0 16px 16px" }}>
-          {/* Save hint */}
-          <div
+      <PageHeader
+        title="AI Assistant"
+        subtitle="Your personal fitness coach"
+        profile={profile}
+        onProfile={onProfile}
+        trailing={!isEmpty ? (
+          <button
+            onClick={newChat}
+            title="New chat"
             style={{
-              background: T.elevated,
-              border: `1px solid ${T.border}`,
-              borderRadius: 10,
-              padding: "8px 12px",
-              margin: "12px 0",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
+              width: 36, height: 36, borderRadius: 9999, background: T.elevated,
+              border: `1px solid ${T.border}`, display: "flex", alignItems: "center",
+              justifyContent: "center", cursor: "pointer", flexShrink: 0,
             }}
           >
-            <Icon name="sparkle" size={12} color={T.teal} />
-            <span style={{ fontSize: 11, color: T.textMuted }}>
-              Say <strong style={{ color: T.text }}>"save this"</strong> to log meals, workouts, or schedule events.
-            </span>
+            <Icon name="edit" size={15} color={T.textMuted} />
+          </button>
+        ) : null}
+      />
+
+      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        {isEmpty ? (
+          /* Welcome state — centered hero with suggested prompts */
+          <div style={{ height: "100%", overflowY: "auto", padding: "0 20px", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, minHeight: 320, padding: "16px 0" }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 20,
+                background: `linear-gradient(135deg, ${T.violet}, ${T.teal})`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: `0 12px 36px ${T.violet}44`,
+              }}>
+                <Icon name="sparkle" size={28} color="#0A0A0F" strokeWidth={2.2} />
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: T.text, letterSpacing: -0.5 }}>Hey {firstName} 👋</div>
+                <div style={{ fontSize: 13, color: T.textMuted, marginTop: 5, lineHeight: 1.5, maxWidth: 280 }}>
+                  I know your goals, meals, workouts and pantry. Ask me anything — or start with one of these.
+                </div>
+              </div>
+              <PromptCards onAction={(prompt) => sendMessage(prompt)} />
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
+                <Icon name="sparkle" size={11} color={T.teal} />
+                <span style={{ fontSize: 11, color: T.textDim }}>
+                  Tip: say <strong style={{ color: T.textMuted }}>"save this"</strong> to log meals, workouts or events.
+                </span>
+              </div>
+            </div>
           </div>
-
-          <QuickActions onAction={(prompt) => sendMessage(prompt)} />
-
-          {/* Messages */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
+        ) : (
+        <div ref={scrollRef} style={{ height: "100%", overflowY: "auto", padding: "0 16px" }}>
+          {/* Bottom-anchored conversation, like a real messenger */}
+          <div style={{ minHeight: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingBottom: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingTop: 12 }}>
             {messages.map((msg, i) => {
               const isUser = msg.role === "user";
               return (
@@ -740,7 +782,9 @@ export default function ChatPage({ profile, onProfile }) {
               </div>
             )}
           </div>
+          </div>
         </div>
+        )}
       </div>
 
       {/* Input — not fixed; sits in flex layout above the fixed nav bar */}
@@ -759,6 +803,7 @@ export default function ChatPage({ profile, onProfile }) {
       >
         <VoiceInput onTranscript={(t) => setInput((prev) => prev + t)} />
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -780,8 +825,10 @@ export default function ChatPage({ profile, onProfile }) {
             fontFamily: "inherit",
             outline: "none",
             resize: "none",
-            maxHeight: 100,
+            maxHeight: 120,
+            overflowY: "auto",
             lineHeight: 1.4,
+            boxSizing: "border-box",
           }}
         />
         <button
