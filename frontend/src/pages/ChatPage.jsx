@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Icon } from "../design/icons";
 import { T } from "../design/tokens";
-import { Chip, PageHeader, LoadingDots } from "../design/components";
-import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, userAPI, chatAPI, streamChat } from "../utils/api";
+import { LoadingDots } from "../design/components";
+import { aiAPI, mealsAPI, scheduleAPI, workoutAPI, chatAPI, streamChat } from "../utils/api";
 import MarkdownRenderer from "../components/ai/MarkdownRenderer";
-import { PromptCards } from "../components/ai/QuickActions";
 import VoiceInput from "../components/ai/VoiceInput";
+import ChatHistorySidebar from "../components/ai/ChatHistorySidebar";
 import { showToast } from "../utils/toast";
 
 const STORAGE_KEY = "lifeplan_chat_v1";
+const SID_KEY = "lifeplan_chat_sid";
 
 function buildContext(profile) {
   const today = new Date().toISOString().slice(0, 10);
@@ -541,11 +542,27 @@ export default function ChatPage({ profile, onProfile }) {
   });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  // The persisted DB session this chat maps to (null = unsaved new chat).
+  const [sessionId, setSessionId] = useState(() => {
+    const raw = sessionStorage.getItem(SID_KEY);
+    return raw ? Number(raw) : null;
+  });
+  const sessionIdRef = useRef(sessionId);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
   const isEmpty = !messages.some((m) => m.role === "user");
   const firstName = (profile?.full_name || profile?.username || "there").split(" ")[0];
+
+  // Keep the ref in sync so async persistence after streaming sees the latest id.
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+    if (sessionId == null) sessionStorage.removeItem(SID_KEY);
+    else sessionStorage.setItem(SID_KEY, String(sessionId));
+  }, [sessionId]);
 
   useEffect(() => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
@@ -565,9 +582,71 @@ export default function ChatPage({ profile, onProfile }) {
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   }, [input]);
 
+  const loadSessions = useCallback(async () => {
+    try {
+      const list = await chatAPI.getSessions();
+      setSessions(Array.isArray(list) ? list : []);
+    } catch {
+      // Offline / not logged in — sidebar just stays empty
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // I persist the conversation after each completed turn: create on first save,
+  // then update in place so one chat == one DB row.
+  const persistConversation = useCallback(async (convo) => {
+    const clean = convo
+      .filter((m) => m && m.content != null && !m.streaming)
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+        ...(m.actionType ? { actionType: m.actionType, actionData: m.actionData } : {}),
+      }));
+    if (clean.length < 2) return; // need at least a user + assistant turn
+    try {
+      if (sessionIdRef.current) {
+        await chatAPI.updateSession(sessionIdRef.current, clean);
+      } else {
+        const res = await chatAPI.saveSession(clean);
+        if (res?.id) setSessionId(res.id);
+      }
+      loadSessions();
+    } catch {
+      // Best-effort: a failed save shouldn't break the live conversation
+    }
+  }, [loadSessions]);
+
   function newChat() {
     setMessages([]);
+    setSessionId(null);
     sessionStorage.removeItem(STORAGE_KEY);
+    setSidebarOpen(false);
+    setInput("");
+  }
+
+  async function openSession(id) {
+    setSidebarOpen(false);
+    if (id === sessionId) return;
+    try {
+      const full = await chatAPI.getSession(id);
+      setMessages(Array.isArray(full?.messages) ? full.messages : []);
+      setSessionId(id);
+    } catch {
+      showToast("Couldn't open that conversation", "error");
+    }
+  }
+
+  async function removeSession(id) {
+    try {
+      await chatAPI.deleteSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (id === sessionId) newChat();
+    } catch {
+      showToast("Couldn't delete that conversation", "error");
+    }
   }
 
   function actionFields(action) {
@@ -579,6 +658,7 @@ export default function ChatPage({ profile, onProfile }) {
   async function sendMessage(text) {
     if (!text.trim()) return;
     const userMsg = { role: "user", content: text.trim() };
+    const baseMessages = messages; // snapshot before this turn, for persistence
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
@@ -588,6 +668,7 @@ export default function ChatPage({ profile, onProfile }) {
 
     // Streaming path: live placeholder message grows with each delta
     let placeholderAdded = false;
+    let assistantMsg = null;
     try {
       setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
       placeholderAdded = true;
@@ -601,16 +682,15 @@ export default function ChatPage({ profile, onProfile }) {
           });
         },
       });
+      assistantMsg = {
+        role: "assistant",
+        content: finalText || "Sorry, I didn't catch that.",
+        ...actionFields(action),
+      };
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
-        if (last?.streaming) {
-          next[next.length - 1] = {
-            role: "assistant",
-            content: finalText || "Sorry, I didn't catch that.",
-            ...actionFields(action),
-          };
-        }
+        if (last?.streaming) next[next.length - 1] = assistantMsg;
         return next;
       });
     } catch (e) {
@@ -620,11 +700,12 @@ export default function ChatPage({ profile, onProfile }) {
       // Fall back to the non-streaming endpoint
       try {
         const response = await aiAPI.chat(fullMessage, history, "general");
-        setMessages((prev) => [...prev, {
+        assistantMsg = {
           role: "assistant",
           content: response?.reply || "Sorry, I didn't catch that.",
           ...actionFields(response?.structured_data),
-        }]);
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -633,6 +714,9 @@ export default function ChatPage({ profile, onProfile }) {
       }
     }
     setLoading(false);
+
+    // Persist once the turn resolved with a real assistant reply.
+    if (assistantMsg) persistConversation([...baseMessages, userMsg, assistantMsg]);
   }
 
   // editedData is the (possibly user-modified) payload from the action card
@@ -664,192 +748,221 @@ export default function ChatPage({ profile, onProfile }) {
     }
   }
 
+  const initials = profile?.full_name
+    ? profile.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "LO";
+
+  // Single pill composer reused by the empty and active states (Gemini-style).
+  const inputBar = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 4,
+        background: "#1e1e1e",
+        border: "1px solid #2a2a2a",
+        borderRadius: 26,
+        padding: "5px 6px 5px 16px",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.45)",
+      }}
+    >
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage(input);
+          }
+        }}
+        placeholder="Ask anything…"
+        rows={1}
+        style={{
+          flex: 1,
+          background: "transparent",
+          border: "none",
+          color: "#fff",
+          fontSize: 15,
+          fontFamily: "inherit",
+          outline: "none",
+          resize: "none",
+          maxHeight: 120,
+          overflowY: "auto",
+          lineHeight: 1.4,
+          padding: "8px 0",
+          boxSizing: "border-box",
+        }}
+      />
+      <VoiceInput onTranscript={(t) => setInput((prev) => prev + t)} />
+      <button
+        onClick={() => sendMessage(input)}
+        disabled={!input.trim() || loading}
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 9999,
+          background: input.trim() && !loading ? T.violet : "#2a2a2a",
+          border: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: input.trim() && !loading ? "pointer" : "default",
+          flexShrink: 0,
+        }}
+      >
+        <Icon name="send" size={16} color={input.trim() && !loading ? "#0A0A0F" : T.textDim} />
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
-      <PageHeader
-        title="AI Assistant"
-        subtitle="Your personal fitness coach"
-        profile={profile}
-        onProfile={onProfile}
-        trailing={!isEmpty ? (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: "#000", position: "relative" }}>
+      {/* Deep blue radial glow behind the input area */}
+      <div
+        style={{
+          position: "absolute", left: "50%", bottom: 0, transform: "translateX(-50%)",
+          width: "150%", height: 380, pointerEvents: "none", zIndex: 0,
+          background: "radial-gradient(circle at 50% 100%, rgba(10,26,74,0.65), rgba(10,26,74,0.20) 38%, transparent 68%)",
+        }}
+      />
+
+      {/* Slim header: hamburger · title · profile */}
+      <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 6px" }}>
+        <button
+          onClick={() => setSidebarOpen(true)}
+          title="Chat history"
+          style={{
+            width: 38, height: 38, borderRadius: 10, background: "#161616",
+            border: "1px solid #262626", display: "flex", alignItems: "center",
+            justifyContent: "center", cursor: "pointer", flexShrink: 0,
+          }}
+        >
+          <Icon name="menu" size={17} color={T.text} />
+        </button>
+        <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.2 }}>Loadout AI</div>
+        {!isEmpty && (
           <button
             onClick={newChat}
             title="New chat"
             style={{
-              width: 36, height: 36, borderRadius: 9999, background: T.elevated,
-              border: `1px solid ${T.border}`, display: "flex", alignItems: "center",
+              width: 38, height: 38, borderRadius: 10, background: "#161616",
+              border: "1px solid #262626", display: "flex", alignItems: "center",
               justifyContent: "center", cursor: "pointer", flexShrink: 0,
             }}
           >
             <Icon name="edit" size={15} color={T.textMuted} />
           </button>
-        ) : null}
-      />
-
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-        {isEmpty ? (
-          /* Welcome state — centered hero with suggested prompts */
-          <div style={{ height: "100%", overflowY: "auto", padding: "0 20px", display: "flex", flexDirection: "column" }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, minHeight: 320, padding: "16px 0" }}>
-              <div style={{
-                width: 64, height: 64, borderRadius: 20,
-                background: `linear-gradient(135deg, ${T.violet}, ${T.teal})`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                boxShadow: `0 12px 36px ${T.violet}44`,
-              }}>
-                <Icon name="sparkle" size={28} color="#0A0A0F" strokeWidth={2.2} />
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: T.text, letterSpacing: -0.5 }}>Hey {firstName} 👋</div>
-                <div style={{ fontSize: 13, color: T.textMuted, marginTop: 5, lineHeight: 1.5, maxWidth: 280 }}>
-                  I know your goals, meals, workouts and pantry. Ask me anything — or start with one of these.
-                </div>
-              </div>
-              <PromptCards onAction={(prompt) => sendMessage(prompt)} />
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
-                <Icon name="sparkle" size={11} color={T.violet} />
-                <span style={{ fontSize: 11, color: T.textDim }}>
-                  Tip: say <strong style={{ color: T.textMuted }}>"save this"</strong> to log meals, workouts or events.
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : (
-        <div ref={scrollRef} style={{ height: "100%", overflowY: "auto", padding: "0 16px" }}>
-          {/* Bottom-anchored conversation, like a real messenger */}
-          <div style={{ minHeight: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingBottom: 16 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingTop: 12 }}>
-            {messages.map((msg, i) => {
-              const isUser = msg.role === "user";
-              return (
-                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", gap: 4 }}>
-                  <div
-                    style={{
-                      maxWidth: "85%",
-                      background: isUser ? T.violet : T.surface,
-                      color: isUser ? "#0A0A0F" : T.textMuted,
-                      borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                      padding: "10px 14px",
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      border: isUser ? "none" : `1px solid ${T.border}`,
-                    }}
-                  >
-                    {isUser ? (
-                      msg.content
-                    ) : msg.streaming && !msg.content ? (
-                      <LoadingDots />
-                    ) : (
-                      <MarkdownRenderer text={msg.content} />
-                    )}
-                  </div>
-                  {!isUser && msg.actionData && msg.actionType === "save_meal_template" && (
-                    <MealActionCard
-                      data={msg.actionData}
-                      onSave={(editedData) => handleSaveAction(msg, editedData)}
-                      onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
-                    />
-                  )}
-                  {!isUser && msg.actionData && msg.actionType === "add_schedule_event" && (
-                    <ScheduleActionCard
-                      data={msg.actionData}
-                      onSave={(editedData) => handleSaveAction(msg, editedData)}
-                      onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
-                    />
-                  )}
-                  {!isUser && msg.actionData && msg.actionType === "save_workout_template" && (
-                    <WorkoutTemplateCard
-                      data={msg.actionData}
-                      onSave={(editedData) => handleSaveAction(msg, editedData)}
-                      onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
-                    />
-                  )}
-                </div>
-              );
-            })}
-            {loading && messages[messages.length - 1]?.role === "user" && (
-              <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                <div
-                  style={{
-                    background: T.surface,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: "16px 16px 16px 4px",
-                    padding: "12px 18px",
-                  }}
-                >
-                  <LoadingDots />
-                </div>
-              </div>
-            )}
-          </div>
-          </div>
-        </div>
         )}
-      </div>
-
-      {/* Input — not fixed; sits in flex layout above the fixed nav bar */}
-      <div
-        style={{
-          flexShrink: 0,
-          background: "rgba(10,11,16,0.95)",
-          backdropFilter: "blur(20px)",
-          borderTop: `0.5px solid ${T.border}`,
-          padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
-          marginBottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <VoiceInput onTranscript={(t) => setInput((prev) => prev + t)} />
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              sendMessage(input);
-            }
-          }}
-          placeholder="Ask anything…"
-          rows={1}
-          style={{
-            flex: 1,
-            background: T.elevated,
-            border: `1px solid ${T.border}`,
-            borderRadius: 18,
-            padding: "10px 14px",
-            color: T.text,
-            fontSize: 14,
-            fontFamily: "inherit",
-            outline: "none",
-            resize: "none",
-            maxHeight: 120,
-            overflowY: "auto",
-            lineHeight: 1.4,
-            boxSizing: "border-box",
-          }}
-        />
         <button
-          onClick={() => sendMessage(input)}
-          disabled={!input.trim() || loading}
+          onClick={onProfile}
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 9999,
-            background: input.trim() && !loading ? T.violet : T.elevated2,
-            border: "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: input.trim() && !loading ? "pointer" : "default",
-            flexShrink: 0,
+            width: 38, height: 38, borderRadius: 9999, flexShrink: 0,
+            background: `linear-gradient(135deg, ${T.violet}, ${T.teal})`,
+            border: "none", padding: 0, cursor: "pointer", overflow: "hidden",
+            color: "#0A0A0F", fontWeight: 700, fontSize: 13, letterSpacing: 0.3,
+            display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit",
           }}
         >
-          <Icon name="send" size={16} color={input.trim() && !loading ? "#0A0A0F" : T.textDim} />
+          {profile?.avatar_data
+            ? <img src={profile.avatar_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : initials}
         </button>
       </div>
+
+      {isEmpty ? (
+        /* Empty state: centered greeting + pill input, no clutter */
+        <div
+          style={{
+            flex: 1, position: "relative", zIndex: 1, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", padding: "0 20px",
+            paddingBottom: `calc(40px + ${T.navHeight})`,
+          }}
+        >
+          <div style={{ fontSize: 28, fontWeight: 300, color: "#fff", textAlign: "center", marginBottom: 26, letterSpacing: -0.3 }}>
+            Your move, {firstName}!
+          </div>
+          <div style={{ width: "100%", maxWidth: 560 }}>{inputBar}</div>
+        </div>
+      ) : (
+        <>
+          <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", position: "relative", zIndex: 1, padding: "4px 14px 8px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 8 }}>
+              {messages.map((msg, i) => {
+                const isUser = msg.role === "user";
+                return (
+                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", gap: 4 }}>
+                    {isUser ? (
+                      <div
+                        style={{
+                          maxWidth: "85%", background: "#1e1e1e", color: "#fff",
+                          borderRadius: "18px 18px 4px 18px", padding: "10px 14px",
+                          fontSize: 14, lineHeight: 1.5, border: "1px solid #2a2a2a",
+                        }}
+                      >
+                        {msg.content}
+                      </div>
+                    ) : (
+                      /* AI replies render as plain text, no bubble */
+                      <div style={{ maxWidth: "94%", color: "#e9e9e9", fontSize: 14.5, lineHeight: 1.6 }}>
+                        {msg.streaming && !msg.content ? <LoadingDots /> : <MarkdownRenderer text={msg.content} />}
+                      </div>
+                    )}
+                    {!isUser && msg.actionData && msg.actionType === "save_meal_template" && (
+                      <MealActionCard
+                        data={msg.actionData}
+                        onSave={(editedData) => handleSaveAction(msg, editedData)}
+                        onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
+                      />
+                    )}
+                    {!isUser && msg.actionData && msg.actionType === "add_schedule_event" && (
+                      <ScheduleActionCard
+                        data={msg.actionData}
+                        onSave={(editedData) => handleSaveAction(msg, editedData)}
+                        onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
+                      />
+                    )}
+                    {!isUser && msg.actionData && msg.actionType === "save_workout_template" && (
+                      <WorkoutTemplateCard
+                        data={msg.actionData}
+                        onSave={(editedData) => handleSaveAction(msg, editedData)}
+                        onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+              {loading && messages[messages.length - 1]?.role === "user" && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <LoadingDots />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Input pinned to the bottom, above the fixed nav bar */}
+          <div
+            style={{
+              flexShrink: 0, position: "relative", zIndex: 1,
+              padding: "8px 14px calc(8px + env(safe-area-inset-bottom, 0px))",
+              marginBottom: T.navHeight,
+            }}
+          >
+            {inputBar}
+          </div>
+        </>
+      )}
+
+      <ChatHistorySidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        sessions={sessions}
+        loading={sessionsLoading}
+        activeId={sessionId}
+        onNew={newChat}
+        onSelect={openSession}
+        onDelete={removeSession}
+      />
     </div>
   );
 }

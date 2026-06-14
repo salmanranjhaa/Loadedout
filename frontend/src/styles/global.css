@@ -62,6 +62,12 @@ body {
   animation: lo-slide-in 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
 
+/* Slide in from left (chat history drawer) */
+@keyframes lo-slide-in-left {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
 /* Timer fade in */
 @keyframes lo-fade-up {
   from { opacity: 0; transform: translateY(8px); }

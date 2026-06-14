@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge } from "../../design/components";
-import { mealsAPI, aiAPI, foodAPI } from "../../utils/api";
+import { mealsAPI, aiAPI, foodAPI, isNativePlatform } from "../../utils/api";
 import { showToast } from "../../utils/toast";
+import { pickImage, decodeBarcodeFromImage, startLiveBarcodeScan } from "../../utils/camera";
 
 // ── Hardcoded food database (per 100g) ────────────────────────────────────────
 const FOOD_DB = [
@@ -466,42 +467,27 @@ function RecentTab({ onSelect }) {
 }
 
 // ── Tab 5: Photo (Gemini Vision) ──────────────────────────────────────────────
-function downscaleImage(file, maxDim = 1280) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-      resolve(dataUrl.split(",")[1]); // strip data:image/jpeg;base64,
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
 function PhotoTab({ onSelect }) {
   const [preview,  setPreview]  = useState(null);
   const [base64,   setBase64]   = useState(null);
   const [hint,     setHint]     = useState("");
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState(null);
+  const [picking,  setPicking]  = useState(false);
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setResult(null);
-    setPreview(URL.createObjectURL(file));
+  async function choose(source) {
+    if (picking) return;
+    setPicking(true);
     try {
-      setBase64(await downscaleImage(file));
-    } catch {
-      showToast("Couldn't read that image", "error");
-      setPreview(null);
+      const img = await pickImage({ source });
+      if (!img) return; // user cancelled
+      setResult(null);
+      setPreview(img.dataUrl);
+      setBase64(img.base64);
+    } catch (err) {
+      showToast(err?.message || "Couldn't open the camera", "error");
+    } finally {
+      setPicking(false);
     }
   }
 
@@ -527,20 +513,33 @@ function PhotoTab({ onSelect }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, maxWidth: "100%" }}>
       {!preview && (
-        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "32px 16px", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 14, cursor: "pointer" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "26px 16px", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 14 }}>
           <Icon name="sparkle" size={26} color={T.teal} />
           <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Snap or upload your meal</div>
           <div style={{ fontSize: 11, color: T.textMuted, textAlign: "center" }}>AI looks at the photo and estimates macros for the whole portion</div>
-          <input type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
-        </label>
+          <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 2 }}>
+            <button
+              onClick={() => choose("camera")} disabled={picking}
+              style={{ flex: 1, padding: "11px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: picking ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: picking ? 0.6 : 1 }}
+            >
+              <Icon name="sparkle" size={14} color="#0A0A0F" /> Take Photo
+            </button>
+            <button
+              onClick={() => choose("photos")} disabled={picking}
+              style={{ flex: 1, padding: "11px 0", background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: picking ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: picking ? 0.6 : 1 }}
+            >
+              <Icon name="search" size={14} color={T.text} /> Gallery
+            </button>
+          </div>
+        </div>
       )}
 
       {preview && (
         <>
           <div style={{ position: "relative" }}>
-            <img src={preview} alt="meal" style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 12, border: `1px solid ${T.border}` }} />
+            <img src={preview} alt="meal" style={{ width: "100%", maxWidth: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 12, border: `1px solid ${T.border}` }} />
             <button onClick={reset} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(10,11,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Icon name="x" size={12} color={T.text} />
             </button>
@@ -610,8 +609,14 @@ function BarcodeTab({ onSelect }) {
   const [code,     setCode]     = useState("");
   const [loading,  setLoading]  = useState(false);
   const [selected, setSelected] = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const canScan = typeof window !== "undefined" && "BarcodeDetector" in window;
+  const [scanning, setScanning] = useState(false); // web live scan active
+  const [busy,     setBusy]     = useState(false);  // native snapshot decode
+  const videoRef = useRef(null);
+  const stopRef  = useRef(null);
+  const native   = isNativePlatform();
+  // Web live scanning needs getUserMedia (https) and a camera. On native we
+  // snapshot via the Camera plugin and decode the still image instead.
+  const canLiveScan = !native && typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
   async function lookup(barcode) {
     if (!barcode) return;
@@ -629,43 +634,46 @@ function BarcodeTab({ onSelect }) {
     setLoading(false);
   }
 
-  useEffect(() => {
-    if (!scanning || !canScan) return;
-    let stream, raf, stopped = false;
-    const video = document.getElementById("lo-barcode-video");
-    const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = stream;
-        await video.play();
-        const tick = async () => {
-          if (stopped) return;
-          try {
-            const codes = await detector.detect(video);
-            if (codes.length > 0) {
-              setScanning(false);
-              setCode(codes[0].rawValue);
-              lookup(codes[0].rawValue);
-              return;
-            }
-          } catch {}
-          raf = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch {
-        showToast("Camera unavailable — type the barcode instead", "error");
-        setScanning(false);
+  // Native: take a photo of the barcode, decode it locally with ZXing.
+  async function scanNative() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const img = await pickImage({ source: "camera" });
+      if (!img) return; // cancelled
+      const found = await decodeBarcodeFromImage(img.dataUrl);
+      if (found) {
+        setCode(found);
+        await lookup(found);
+      } else {
+        showToast("No barcode detected — hold steady and fill the frame, or type it", "error");
       }
-    })();
+    } catch (err) {
+      showToast(err?.message || "Couldn't open the camera", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
 
+  // Web: live-decode from the rear camera into the <video> element.
+  useEffect(() => {
+    if (!scanning) return;
+    let cancelled = false;
+    (async () => {
+      // The video element mounts in the same render that flips `scanning`.
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled || !videoRef.current) return;
+      stopRef.current = await startLiveBarcodeScan(
+        videoRef.current,
+        (text) => { setScanning(false); setCode(text); lookup(text); },
+        () => { showToast("Camera unavailable — type the barcode instead", "error"); setScanning(false); },
+      );
+    })();
     return () => {
-      stopped = true;
-      if (raf) cancelAnimationFrame(raf);
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      cancelled = true;
+      if (stopRef.current) { stopRef.current(); stopRef.current = null; }
     };
-  }, [scanning, canScan]);
+  }, [scanning]);
 
   if (selected) {
     return (
@@ -678,24 +686,24 @@ function BarcodeTab({ onSelect }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, maxWidth: "100%" }}>
       {scanning ? (
         <div style={{ position: "relative" }}>
-          <video id="lo-barcode-video" muted playsInline style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 12, background: "#000" }} />
+          <video ref={videoRef} muted playsInline style={{ width: "100%", maxWidth: "100%", height: 220, objectFit: "cover", borderRadius: 12, background: "#000" }} />
           <div style={{ position: "absolute", inset: "35% 12%", border: `2px solid ${T.teal}`, borderRadius: 8, pointerEvents: "none" }} />
           <button onClick={() => setScanning(false)} style={{ position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 9999, background: "rgba(10,11,16,0.8)", border: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name="x" size={12} color={T.text} />
           </button>
         </div>
       ) : (
-        canScan && (
-          <button
-            onClick={() => setScanning(true)}
-            style={{ padding: "14px 0", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 12, color: T.teal, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-          >
-            <Icon name="search" size={15} color={T.teal} /> Scan Barcode with Camera
-          </button>
-        )
+        <button
+          onClick={() => (native ? scanNative() : setScanning(true))}
+          disabled={busy || (!native && !canLiveScan)}
+          style={{ padding: "14px 0", background: T.elevated, border: `1.5px dashed ${T.teal}55`, borderRadius: 12, color: T.teal, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy || (!native && !canLiveScan) ? 0.55 : 1 }}
+        >
+          <Icon name="search" size={15} color={T.teal} />
+          {busy ? "Reading barcode…" : native ? "Scan Barcode with Camera" : canLiveScan ? "Scan Barcode with Camera" : "Camera unavailable — type below"}
+        </button>
       )}
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -735,7 +743,7 @@ export default function FoodSearch({ onSelect }) {
   const [activeTab, setActiveTab] = useState("database");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, maxWidth: "100%" }}>
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 4, background: T.elevated, borderRadius: 10, padding: 3 }}>
         {TABS.map((tab) => (

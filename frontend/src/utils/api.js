@@ -356,6 +356,7 @@ export const chatAPI = {
   getSessions: () => request("/chat/sessions"),
   getSession: (id) => request(`/chat/sessions/${id}`),
   saveSession: (messages, title) => request("/chat/sessions", { method: "POST", body: JSON.stringify({ messages, title }) }),
+  updateSession: (id, messages, title) => request(`/chat/sessions/${id}`, { method: "PUT", body: JSON.stringify({ messages, title }) }),
   deleteSession: (id) => request(`/chat/sessions/${id}`, { method: "DELETE" }),
 };
 

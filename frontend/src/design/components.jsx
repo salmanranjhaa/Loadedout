@@ -640,14 +640,19 @@ export function BottomSheet({ open, onClose, title, children, height = "auto" })
           borderRadius: "20px 20px 0 0",
           border: `1px solid ${T.border}`,
           borderBottom: "none",
-          padding: "20px 20px 48px",
+          padding: "20px 20px 24px",
           width: "100%",
           maxWidth: 430,
-          maxHeight: height === "auto" ? "85vh" : height,
+          // Float the sheet above the fixed bottom nav so its action buttons are
+          // never hidden behind it; the dark backdrop still fills the rest.
+          marginBottom: T.navHeight,
+          maxHeight: height === "auto" ? "80vh" : height,
+          boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
           gap: 14,
           overflowY: "auto",
+          overflowX: "hidden",
           animation: "lo-slide-up 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards",
         }}
       >

@@ -106,6 +106,10 @@ export const T = {
     toast: 110,
     confetti: 9999,
   },
+
+  // Height the fixed bottom tab bar occupies (content + iOS safe area). Shared
+  // so bottom sheets can sit ABOVE the nav instead of behind it.
+  navHeight: "calc(58px + env(safe-area-inset-bottom, 0px))",
 };
 
 // Per-domain accents — each tab/page area carries its own hue so the app

@@ -1,0 +1,3 @@
+
+# Built APK (published at deploy time, not source)
+public/*.apk

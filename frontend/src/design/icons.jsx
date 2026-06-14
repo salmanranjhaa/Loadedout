@@ -37,6 +37,7 @@ export function Icon({ name, size = 20, color = "currentColor", strokeWidth = 1.
     case "trash":      return <svg {...v}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" {...p}/></svg>;
     case "google":     return <svg {...v}><path d="M21 12h-9v3.5h5a5 5 0 11-1.5-6" {...p}/></svg>;
     case "history":    return <svg {...v}><path d="M3 12a9 9 0 109-9 9 9 0 00-6 2.3L3 8M3 3v5h5M12 7v5l3.5 2" {...p}/></svg>;
+    case "menu":       return <svg {...v}><path d="M4 7h16M4 12h16M4 17h16" {...p} strokeWidth="2"/></svg>;
     case "location":   return <svg {...v}><path d="M12 21c-5-6-8-9-8-13a8 8 0 0116 0c0 4-3 7-8 13z" {...p}/><circle cx="12" cy="8" r="2.5" {...p}/></svg>;
     case "pill":       return <svg {...v}><rect x="3" y="8" width="18" height="8" rx="4" {...p}/><path d="M12 8v8" {...p}/></svg>;
     case "bolt":       return <svg {...v}><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" {...p}/></svg>;

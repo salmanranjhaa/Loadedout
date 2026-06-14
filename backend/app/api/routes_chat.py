@@ -18,6 +18,11 @@ class SaveSessionRequest(BaseModel):
     title: Optional[str] = None
 
 
+class UpdateSessionRequest(BaseModel):
+    messages: list[dict]
+    title: Optional[str] = None
+
+
 @router.get("/sessions")
 @limiter.limit("100/minute")
 async def list_sessions(
@@ -29,7 +34,7 @@ async def list_sessions(
     result = await db.execute(
         select(ChatSession)
         .where(ChatSession.user_id == user["sub"])
-        .order_by(ChatSession.created_at.desc())
+        .order_by(ChatSession.updated_at.desc())
         .limit(50)
     )
     sessions = result.scalars().all()
@@ -39,6 +44,7 @@ async def list_sessions(
             "title": s.title,
             "message_count": len(s.messages) if s.messages else 0,
             "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
         }
         for s in sessions
     ]
@@ -102,6 +108,36 @@ async def save_session(
     await db.commit()
     await db.refresh(session)
     return {"id": session.id, "title": session.title}
+
+
+@router.put("/sessions/{session_id}")
+@limiter.limit("60/minute")
+async def update_session(
+    request: Request,
+    session_id: int,
+    body: UpdateSessionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I replace the messages of an existing session as the conversation grows,
+    so one chat maps to one persisted session instead of a new row per turn."""
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="No messages to save")
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user["sub"],
+        )
+    )
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s.messages = body.messages
+    if body.title:
+        s.title = body.title
+    await db.commit()
+    await db.refresh(s)
+    return {"id": s.id, "title": s.title, "updated_at": s.updated_at.isoformat() if s.updated_at else None}
 
 
 @router.delete("/sessions/{session_id}")

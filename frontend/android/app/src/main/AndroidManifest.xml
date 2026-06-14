@@ -48,4 +48,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Camera + photo access for meal photo capture and barcode scanning
+         (@capacitor/camera). Camera is optional so the app still installs on
+         camera-less devices and falls back to gallery / manual entry. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>
