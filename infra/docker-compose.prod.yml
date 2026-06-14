@@ -99,6 +99,10 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      # Published Android APK — served at /loadedout.apk. Bind-mounted (not baked
+      # into the image or committed) so it survives rebuilds; replace the host
+      # file in infra/apk/ to ship a new build.
+      - ./apk/loadedout.apk:/usr/share/caddy/loadedout.apk:ro
     networks:
       - lifeplan-net
     depends_on:

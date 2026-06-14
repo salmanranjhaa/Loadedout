@@ -44,3 +44,6 @@ frontend/.env.android.bak
 # frontend/.env.production is NOT ignored — it only has VITE_API_URL=/api/v1 (non-sensitive)
 backend/.env.staging
 infra/.env.staging
+
+# Published APK (bind-mounted at deploy time, not source)
+infra/apk/
