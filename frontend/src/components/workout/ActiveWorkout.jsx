@@ -505,10 +505,14 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    // Pinned top → just above the bottom tab bar (T.navHeight already includes
+    // the iOS home-indicator inset) so the nav stays visible and tappable during
+    // an active session instead of being covered by this z=modal overlay.
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: T.navHeight, zIndex: T.z.modal, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-      {/* Header */}
-      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+      {/* Header — paddingTop carries the top safe-area inset so the title/timer
+          and the Finish button always clear the notch/status-bar zone. */}
+      <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 12px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} color={T.text} />
         </button>

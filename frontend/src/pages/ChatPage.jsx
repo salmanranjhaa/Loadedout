@@ -11,6 +11,15 @@ import { showToast } from "../utils/toast";
 const STORAGE_KEY = "lifeplan_chat_v1";
 const SID_KEY = "lifeplan_chat_sid";
 
+// Example prompts on the empty screen — one per domain the coach can act on,
+// so a new user immediately sees the kinds of things they can ask.
+const CHAT_SUGGESTIONS = [
+  { icon: "dumbbell", color: T.catExercise, label: "Build me a 45-minute push day",        prompt: "Build me a 45-minute push day workout" },
+  { icon: "meal",     color: T.violet,      label: "Estimate macros for chicken & rice",   prompt: "Estimate the macros for a chicken and rice bowl" },
+  { icon: "calendar", color: T.catClass,    label: "Add gym Mon/Wed/Fri at 7am",           prompt: "Add gym to my schedule every Monday, Wednesday and Friday at 7am" },
+  { icon: "sparkle",  color: T.teal,        label: "What should I train today?",           prompt: "What should I train today?" },
+];
+
 function buildContext(profile) {
   const today = new Date().toISOString().slice(0, 10);
   const water = parseInt(localStorage.getItem(`lo_water_${today}`) || "0", 10);
@@ -31,6 +40,7 @@ function inferTemplateExerciseType(exercise) {
 function MealActionCard({ data, onSave, onDismiss }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedMode, setSavedMode] = useState("log");
   const [tab, setTab] = useState("macros");
   const [edited, setEdited] = useState({ ...data });
   const [ingredients, setIngredients] = useState((data.ingredients || []).map((ing) => ({ name: ing.name || "", amount: ing.amount || "" })));
@@ -69,10 +79,11 @@ function MealActionCard({ data, onSave, onDismiss }) {
     setIngredients((p) => p.filter((_, idx) => idx !== i));
   }
 
-  async function handleSave() {
+  async function handleSave(mode) {
     setSaving(true);
     try {
-      await onSave({ ...edited, ingredients });
+      await onSave({ ...edited, ingredients }, mode);
+      setSavedMode(mode);
       setSaved(true);
     } catch (e) {
       showToast("Failed to save: " + e.message, "error");
@@ -109,7 +120,7 @@ function MealActionCard({ data, onSave, onDismiss }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Icon name="meal" size={13} color={accent} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{saved ? "Saved & Logged ✓" : "Save this meal?"}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{saved ? (savedMode === "log" ? "Saved & Logged ✓" : "Saved as template ✓") : "Save this meal?"}</span>
         {!saved && (
           <button onClick={onDismiss} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: T.textDim, padding: 0 }}>
             <Icon name="x" size={12} color={T.textDim} />
@@ -278,23 +289,25 @@ function MealActionCard({ data, onSave, onDismiss }) {
       {!saved && (
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={onDismiss}
+            onClick={() => handleSave("save")}
+            disabled={saving}
             style={{
               flex: 1,
               padding: "8px 0",
               fontSize: 11,
-              color: T.textMuted,
+              color: T.text,
               background: T.elevated,
-              border: "none",
+              border: `1px solid ${T.border}`,
               borderRadius: 8,
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "inherit",
+              opacity: saving ? 0.5 : 1,
             }}
           >
-            Dismiss
+            Only Save
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => handleSave("log")}
             disabled={saving}
             style={{
               flex: 1,
@@ -314,7 +327,7 @@ function MealActionCard({ data, onSave, onDismiss }) {
             }}
           >
             <Icon name="check" size={11} color="#0A0A0F" />
-            {saving ? "Saving…" : "Save & Log Today"}
+            {saving ? "Saving…" : "Save & Log"}
           </button>
         </div>
       )}
@@ -408,11 +421,13 @@ function ScheduleActionCard({ data, onSave, onDismiss }) {
 function WorkoutTemplateCard({ data, onSave, onDismiss }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedMode, setSavedMode] = useState("save");
   const [tab, setTab] = useState("overview");
-  async function handleSave() {
+  async function handleSave(mode) {
     setSaving(true);
     try {
-      await onSave(data);
+      await onSave(data, mode);
+      setSavedMode(mode);
       setSaved(true);
     } catch (e) {
       showToast(e.message, "error");
@@ -435,7 +450,7 @@ function WorkoutTemplateCard({ data, onSave, onDismiss }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Icon name="dumbbell" size={13} color={accent} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{saved ? "Saved ✓" : "Save workout template?"}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{saved ? (savedMode === "log" ? "Saved & Logged ✓" : "Saved ✓") : "Save workout template?"}</span>
         {!saved && (
           <button onClick={onDismiss} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: T.textDim, padding: 0 }}>
             <Icon name="x" size={12} color={T.textDim} />
@@ -490,23 +505,25 @@ function WorkoutTemplateCard({ data, onSave, onDismiss }) {
       {!saved && (
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={onDismiss}
+            onClick={() => handleSave("save")}
+            disabled={saving}
             style={{
               flex: 1,
               padding: "8px 0",
               fontSize: 11,
-              color: T.textMuted,
+              color: T.text,
               background: T.elevated,
-              border: "none",
+              border: `1px solid ${T.border}`,
               borderRadius: 8,
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "inherit",
+              opacity: saving ? 0.5 : 1,
             }}
           >
-            Dismiss
+            Only Save
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => handleSave("log")}
             disabled={saving}
             style={{
               flex: 1,
@@ -518,9 +535,15 @@ function WorkoutTemplateCard({ data, onSave, onDismiss }) {
               borderRadius: 8,
               cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              opacity: saving ? 0.5 : 1,
             }}
           >
-            {saving ? "Saving…" : "Save Template"}
+            <Icon name="check" size={11} color="#0A0A0F" />
+            {saving ? "Saving…" : "Save & Log"}
           </button>
         </div>
       )}
@@ -719,13 +742,15 @@ export default function ChatPage({ profile, onProfile }) {
     if (assistantMsg) persistConversation([...baseMessages, userMsg, assistantMsg]);
   }
 
-  // editedData is the (possibly user-modified) payload from the action card
-  function handleSaveAction(msg, editedData) {
+  // editedData is the (possibly user-modified) payload from the action card.
+  // mode: "log" → also record it for today; "save" → template/event only.
+  function handleSaveAction(msg, editedData, mode = "log") {
     if (!msg.actionType) return;
     const data = editedData || msg.actionData;
     if (!data) return;
+    const today = new Date().toISOString().slice(0, 10);
+
     if (msg.actionType === "save_meal_template") {
-      // Log it as today's meal (the primary user intent) and save as template
       const mealPayload = {
         name: data.name || "AI Meal",
         meal_type: data.meal_type || "lunch",
@@ -733,18 +758,37 @@ export default function ChatPage({ profile, onProfile }) {
         protein_g: parseFloat(data.protein_g) || 0,
         carbs_g: parseFloat(data.carbs_g) || 0,
         fat_g: parseFloat(data.fat_g) || 0,
-        date: new Date().toISOString().slice(0, 10),
+        date: today,
       };
-      mealsAPI.logManual(mealPayload).catch(() => {});
-      // Also save as template so it appears in FoodSearch later
-      mealsAPI.saveTemplate({ name: mealPayload.name, meal_type: mealPayload.meal_type, ...mealPayload }).catch(() => {});
-      return Promise.resolve();
+      // Always save the reusable template; only log it as today's meal on "Save & Log".
+      const ops = [mealsAPI.saveTemplate({ name: mealPayload.name, meal_type: mealPayload.meal_type, ...mealPayload })];
+      if (mode === "log") ops.push(mealsAPI.logManual(mealPayload));
+      return Promise.all(ops);
     }
     if (msg.actionType === "add_schedule_event") {
       return scheduleAPI.create(data);
     }
     if (msg.actionType === "save_workout_template") {
-      return workoutAPI.saveTemplate(data);
+      // Always save the template; "Save & Log" also records a completed session today.
+      const ops = [workoutAPI.saveTemplate(data)];
+      if (mode === "log") {
+        const exercises = (data.exercises || []).map((e) => ({
+          name: e.name,
+          sets: Array.from({ length: Math.max(1, Number(e.sets) || 1) }, () => ({
+            reps: parseInt(e.reps) || 0,
+            weight_kg: parseFloat(e.weight_suggestion_kg) || 0,
+          })),
+        }));
+        ops.push(workoutAPI.save({
+          workout_type: data.workout_type || "strength",
+          duration_minutes: data.estimated_duration || 45,
+          intensity: "moderate",
+          description: `${data.name || "Workout"} — ${(data.exercises || []).length} exercises`,
+          date: today,
+          details: { exercises },
+        }));
+      }
+      return Promise.all(ops);
     }
   }
 
@@ -875,7 +919,7 @@ export default function ChatPage({ profile, onProfile }) {
         <div
           style={{
             flex: 1, position: "relative", zIndex: 1, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center", padding: "0 20px",
+            alignItems: "center", justifyContent: "center", padding: "0 20px", overflowY: "auto",
             paddingBottom: `calc(40px + ${T.navHeight})`,
           }}
         >
@@ -883,6 +927,32 @@ export default function ChatPage({ profile, onProfile }) {
             Your move, {firstName}!
           </div>
           <div style={{ width: "100%", maxWidth: 560 }}>{inputBar}</div>
+
+          {/* Example prompts — what the coach can do, one per domain */}
+          <div style={{ width: "100%", maxWidth: 560, marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {CHAT_SUGGESTIONS.map((s) => (
+              <button
+                key={s.prompt}
+                onClick={() => sendMessage(s.prompt)}
+                style={{
+                  textAlign: "left", display: "flex", flexDirection: "column", gap: 8,
+                  background: "#161616", border: "1px solid #262626", borderRadius: 16,
+                  padding: "12px 13px", cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                <Icon name={s.icon} size={16} color={s.color} />
+                <span style={{ fontSize: 12.5, color: "#d4d4d4", lineHeight: 1.35 }}>{s.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* How saving works */}
+          <div style={{ width: "100%", maxWidth: 560, marginTop: 14, display: "flex", alignItems: "flex-start", gap: 7, color: T.textDim }}>
+            <Icon name="sparkle" size={12} color={T.violet} />
+            <span style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+              Tip: say <b style={{ color: T.textMuted }}>“save this”</b> or <b style={{ color: T.textMuted }}>“log it”</b> and I’ll turn it into a template or log the workout, meal, or schedule event for you.
+            </span>
+          </div>
         </div>
       ) : (
         <>
@@ -911,7 +981,7 @@ export default function ChatPage({ profile, onProfile }) {
                     {!isUser && msg.actionData && msg.actionType === "save_meal_template" && (
                       <MealActionCard
                         data={msg.actionData}
-                        onSave={(editedData) => handleSaveAction(msg, editedData)}
+                        onSave={(editedData, mode) => handleSaveAction(msg, editedData, mode)}
                         onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
                       />
                     )}
@@ -925,7 +995,7 @@ export default function ChatPage({ profile, onProfile }) {
                     {!isUser && msg.actionData && msg.actionType === "save_workout_template" && (
                       <WorkoutTemplateCard
                         data={msg.actionData}
-                        onSave={(editedData) => handleSaveAction(msg, editedData)}
+                        onSave={(editedData, mode) => handleSaveAction(msg, editedData, mode)}
                         onDismiss={() => setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, actionData: null } : m)))}
                       />
                     )}

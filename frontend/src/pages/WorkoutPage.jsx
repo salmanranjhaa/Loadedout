@@ -115,20 +115,6 @@ const NEXT_MUSCLES = {
   Core: { muscles: ["Core", "Abs"],                  description: "Core strength" },
 };
 
-// Built-in program days resolved into startable templates
-function resolveLocalTemplates() {
-  return (exerciseData.templates || []).flatMap((tpl) =>
-    (tpl.days || []).map((day) => ({
-      name:         day.name,
-      workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
-      exercises:    (day.exercises || []).map((exId) => {
-        const ex = exerciseData.exercises.find((e) => e.id === exId);
-        return { name: ex?.name || exId };
-      }),
-    }))
-  );
-}
-
 // ── Hero card (AI-driven, heuristic fallback) ─────────────────────────────────
 function HeroCard({ onStart, onBrowse, workoutInsight, aiSuggestion, aiThinking }) {
   const insight = workoutInsight;
@@ -368,18 +354,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
 function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
   const [filter, setFilter] = useState("all");
 
-  // Build combined template list from local JSON + API
-  const localTemplates = (exerciseData.templates || []).flatMap((tpl) =>
-    (tpl.days || []).map((day) => ({
-      id:           `${tpl.id}-${day.name}`,
-      name:         day.name,
-      templateName: tpl.name,
-      workout_type: day.focus === "cardio" ? "cardio" : day.focus === "fullBody" ? "hyrox" : "strength",
-      exerciseIds:  day.exercises || [],
-      source:       "local",
-    }))
-  );
-
+  // Only the user's own templates — created manually or saved from the AI coach.
   const apiMapped = apiTemplates.map((t) => ({
     id:           `api-${t.id}`,
     name:         t.name,
@@ -390,7 +365,7 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
     source:       "api",
   }));
 
-  const allTemplates = [...apiMapped, ...localTemplates];
+  const allTemplates = [...apiMapped];
   const filtered = filter === "all" ? allTemplates : allTemplates.filter((t) => t.workout_type === filter);
 
   function startTemplate(t) {
@@ -646,7 +621,7 @@ export default function WorkoutPage({ profile, onProfile }) {
     suggestionRequested.current = true;
 
     const seen = new Set();
-    const candidates = [...templates, ...resolveLocalTemplates()].filter((t) => {
+    const candidates = [...templates].filter((t) => {
       const key = (t.name || "").toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);
@@ -727,12 +702,11 @@ export default function WorkoutPage({ profile, onProfile }) {
     }
     if (aiSuggestion?.is_rest_day) { startSession(null); return; }
 
-    // 2. Heuristic fallback: PPL rotation against own + built-in templates
+    // 2. Heuristic fallback: PPL rotation against the user's own templates only.
+    //    No built-in programs — an empty quick session is the fallback.
     const nextGroup = workoutInsight?.nextGroup || "Push";
     const apiMatch = templates.find((t) => (t.name || "").toLowerCase().includes(nextGroup.toLowerCase()));
-    if (apiMatch) { startSession(apiMatch); return; }
-    const localMatch = resolveLocalTemplates().find((t) => t.name.toLowerCase().includes(nextGroup.toLowerCase()));
-    startSession(localMatch || null);
+    startSession(apiMatch || null);
   }
 
   return (
