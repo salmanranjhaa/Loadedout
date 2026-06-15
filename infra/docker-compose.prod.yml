@@ -108,19 +108,27 @@ services:
     depends_on:
       - backend
 
+# Network and volumes are pre-existing (originally created under the "loadedout"
+# project). Declared external so any compose project name reuses them in place
+# instead of trying to recreate them / emitting ownership warnings.
 networks:
   lifeplan-net:
-    driver: bridge
+    external: true
     name: lifeplan-net
 
 volumes:
   lifeplan-pgdata:
+    external: true
     name: lifeplan-pgdata
   lifeplan-mongodata:
+    external: true
     name: lifeplan-mongodata
   lifeplan-gifs:
+    external: true
     name: lifeplan-gifs
   caddy_data:
+    external: true
     name: lifeplan-caddy-data
   caddy_config:
+    external: true
     name: lifeplan-caddy-config
