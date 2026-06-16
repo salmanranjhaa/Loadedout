@@ -292,7 +292,10 @@ export default function App() {
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderTop: `0.5px solid ${T.border}`,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
-          zIndex: 50,
+          // Above every bottom sheet / modal (z=100) so the tab bar is always
+          // the topmost element pinned to the bottom of the viewport and is
+          // never covered or pushed off-screen when a sheet opens.
+          zIndex: 1000,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 6px 6px" }}>

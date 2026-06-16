@@ -80,11 +80,14 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
           border: `1px solid ${T.border}`,
           borderBottom: "none",
           padding: "20px 20px 0 20px",
-          paddingBottom: 44,
+          paddingBottom: 24,
+          // Float above the fixed bottom nav so the last field / action button
+          // is never hidden behind it, and cap height with dvh for mobile.
+          marginBottom: T.navHeight,
           display: "flex",
           flexDirection: "column",
           gap: 14,
-          maxHeight: "92vh",
+          maxHeight: `calc(100dvh - ${T.navHeight})`,
           overflowY: "auto",
         }}
       >

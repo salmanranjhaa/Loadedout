@@ -281,7 +281,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>AI Workout Logger</div>
@@ -385,7 +385,7 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Browse Templates</div>
@@ -471,7 +471,7 @@ function NewTemplateModal({ onClose, onSaved }) {
   return (
     <>
       <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 48px", maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+        <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
           <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 
           {/* Header */}
