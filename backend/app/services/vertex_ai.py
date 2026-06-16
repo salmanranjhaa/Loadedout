@@ -481,7 +481,12 @@ def _format_profile_blob(value) -> str:
     return str(value)
 
 def _repair_json(text: str) -> str:
-    """I fix common AI JSON output issues like thousands separators and trailing commas."""
+    """I fix common AI JSON output issues like comments, thousands separators and trailing commas."""
+    # Strip JS-style comments the model sometimes injects. Block comments first,
+    # then whole-line // comments (line-anchored so we never touch "https://"
+    # inside string values).
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    text = re.sub(r'(?m)^\s*//[^\n]*$', '', text)
     # Fix thousands separators: 1,234 -> 1234 (matches digit,3digits at word boundary)
     text = re.sub(r'(\d{1,3}),(\d{3})\b', r'\1\2', text)
     # Remove trailing commas before } or ]

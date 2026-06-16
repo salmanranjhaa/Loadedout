@@ -247,7 +247,13 @@ async def ai_chat(
         )
     except Exception as e:
         logger.error(f"Vertex AI chat failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502, detail=f"AI service error: {type(e).__name__}: {e}")
+        # Return a graceful reply instead of a 502 so the client shows a normal
+        # message rather than a hard error.
+        return {
+            "reply": "Sorry — I'm having trouble reaching the AI right now. Please try again in a moment.",
+            "structured_data": None,
+            "rag_context_used": bool(rag_context),
+        }
 
     return {
         "reply": response["text"],
@@ -401,5 +407,8 @@ async def suggest_workout(
         )
     except Exception as e:
         logger.warning(f"Workout suggestion failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502, detail="AI suggestion unavailable")
+        # Degrade gracefully: the client treats an empty body as "no AI pick"
+        # and falls back to its heuristic hero card, so never surface a 502 for
+        # what is an optional, best-effort suggestion.
+        return {}
     return suggestion

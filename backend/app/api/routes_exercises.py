@@ -243,7 +243,9 @@ async def get_exercise_gif(
         gif_bytes = await wx_fetch_gif(exercise.gif_url)
     except Exception as e:
         logger.warning("Failed to fetch GIF for %s: %s", exercise_id, e)
-        raise HTTPException(status_code=502, detail="Failed to fetch GIF from upstream")
+        # The GIF is optional decoration — a 404 lets the <img> fail quietly
+        # instead of surfacing a 502 Bad Gateway.
+        raise HTTPException(status_code=404, detail="GIF unavailable")
 
     os.makedirs(GIF_CACHE_DIR, exist_ok=True)
     with open(cache_path, "wb") as f:
