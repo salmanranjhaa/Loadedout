@@ -861,7 +861,7 @@ export default function ChatPage({ profile, onProfile }) {
   );
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: "#000", position: "relative" }}>
+    <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, position: "relative" }}>
       {/* Deep blue radial glow behind the input area */}
       <div
         style={{
