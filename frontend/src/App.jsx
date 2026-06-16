@@ -140,6 +140,15 @@ export default function App() {
     return () => { cancelled = true; };
   }, [loggedIn]);
 
+  // The profile + full-settings screens are full-screen overlays rendered
+  // outside <Routes>. Tapping a bottom tab navigates the route underneath, but
+  // the overlay would otherwise stay mounted on top and look "stuck". Closing
+  // both whenever the path changes makes every tab press dismiss them normally.
+  useEffect(() => {
+    setShowProfile(false);
+    setShowFullProfile(false);
+  }, [location.pathname]);
+
   // 5-tap status bar easter egg
   function onStatusTap() {
     setNotchTaps((t) => {

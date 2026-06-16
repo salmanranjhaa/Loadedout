@@ -286,10 +286,11 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
         }
       `}</style>
 
-      {/* Header */}
+      {/* Header — paddingTop carries the status-bar/notch inset so the header
+          clears the device notch on this full-screen overlay. */}
       <div style={{
         display: "flex", alignItems: "center", gap: 12,
-        padding: "14px 16px 10px",
+        padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 10px",
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,
       }}>

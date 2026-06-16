@@ -81,6 +81,100 @@ def _parse_client_date(raw: Optional[str]) -> date:
     return date.today()
 
 
+def _coerce_int(val):
+    try:
+        if val is None or val == "":
+            return None
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_float(val):
+    try:
+        if val is None or val == "":
+            return None
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_exercises(details) -> list:
+    """I return a consistent exercise breakdown the client can always render.
+
+    Workouts reach us from three places that historically stored `sets`
+    differently: the live session logger (sets as a list of objects), and the
+    MCP/AI logger (sets as a count + shared reps/weight). I flatten all of them
+    into ``[{name, sets: [{reps, weight_kg, rpe, unit, isWarmup, notes}], notes}]``
+    so the history detail screen shows every set regardless of source.
+    """
+    if not isinstance(details, dict):
+        return []
+    raw = details.get("exercises")
+    if not isinstance(raw, list):
+        return []
+
+    out = []
+    for ex in raw:
+        if isinstance(ex, str):
+            out.append({"name": ex, "sets": [], "notes": None})
+            continue
+        if not isinstance(ex, dict):
+            continue
+
+        name = ex.get("name") or ex.get("exercise") or "Exercise"
+        unit = ex.get("unit") or "kg"
+        raw_sets = ex.get("sets")
+        norm_sets = []
+
+        if isinstance(raw_sets, list):
+            for s in raw_sets:
+                if not isinstance(s, dict):
+                    continue
+                norm_sets.append({
+                    "reps":      _coerce_int(s.get("reps")) or 0,
+                    "weight_kg": _coerce_float(s.get("weight_kg", s.get("weight"))) or 0,
+                    "rpe":       _coerce_int(s.get("rpe")),
+                    "unit":      s.get("unit") or unit,
+                    "isWarmup":  bool(s.get("isWarmup", False)),
+                    "notes":     s.get("notes"),
+                })
+        elif isinstance(raw_sets, (int, float)) and raw_sets:
+            # Summary form: `sets` is a count, reps/weight shared across them.
+            reps = _coerce_int(ex.get("reps")) or 0
+            weight = _coerce_float(ex.get("weight_kg", ex.get("weight"))) or 0
+            for _ in range(int(raw_sets)):
+                norm_sets.append({
+                    "reps": reps, "weight_kg": weight, "rpe": None,
+                    "unit": unit, "isWarmup": False, "notes": None,
+                })
+        elif ex.get("reps") is not None or ex.get("weight_kg") is not None:
+            # A single set described inline on the exercise itself.
+            norm_sets.append({
+                "reps":      _coerce_int(ex.get("reps")) or 0,
+                "weight_kg": _coerce_float(ex.get("weight_kg", ex.get("weight"))) or 0,
+                "rpe":       _coerce_int(ex.get("rpe")),
+                "unit":      unit,
+                "isWarmup":  False,
+                "notes":     ex.get("notes"),
+            })
+
+        out.append({"name": name, "sets": norm_sets, "notes": ex.get("notes")})
+    return out
+
+
+def _derive_workout_name(w: WorkoutLog) -> str:
+    """I produce a human title for a logged workout for the history list."""
+    details = w.details if isinstance(w.details, dict) else {}
+    name = details.get("name")
+    if not name and w.notes:
+        # Live + MCP logs lead the notes with "<Name> — …summary".
+        name = w.notes.split(" — ")[0].strip()
+    if not name:
+        name = (w.workout_type or "Workout").replace("_", " ").title()
+    return name[:80]
+
+
 @router.post("/analyze")
 @limiter.limit("20/minute")
 async def analyze_workout_route(
@@ -164,8 +258,14 @@ async def get_workouts(
         "workouts": [{
             "id": w.id,
             "date": str(w.date),
+            # `type`/`duration` kept for back-compat; the client reads the
+            # explicit `workout_type`/`duration_minutes`/`name`/`exercises`.
             "type": w.workout_type,
+            "workout_type": w.workout_type,
             "duration": w.duration_minutes,
+            "duration_minutes": w.duration_minutes,
+            "name": _derive_workout_name(w),
+            "exercises": _normalize_exercises(w.details),
             "intensity": w.intensity,
             "calories": w.calories_burned_est,
             "notes": w.notes,

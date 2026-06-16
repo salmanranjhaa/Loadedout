@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { T, muscleColors } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge, BottomSheet } from "../../design/components";
@@ -323,9 +324,17 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   const [showBrowser,   setShowBrowser]  = useState(false);
   const [celebration,   setCelebration]  = useState(null);
   const [summary,       setSummary]      = useState(null);
+  const [showGuard,     setShowGuard]    = useState(false);
   const restInterval  = useRef(null);
   const timerInterval = useRef(null);
   const audioCtx      = useRef(null);
+
+  // Live mirrors of state so the hardware back-button listener (registered once)
+  // always sees the current screen + data instead of a stale closure snapshot.
+  const exercisesRef = useRef(exercises);
+  exercisesRef.current = exercises;
+  const summaryRef = useRef(summary);
+  summaryRef.current = summary;
 
   // Elapsed timer
   useEffect(() => {
@@ -438,64 +447,115 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
 
   const removeExercise = (exIndex) => setExercises((prev) => prev.filter((_, i) => i !== exIndex));
 
-  const handleFinish = () => {
-    const durationSeconds = elapsed;
-    const workout = {
-      name:            template?.name || "Quick Workout",
-      workout_type:    template?.workout_type || "strength",
-      duration_minutes: Math.floor(elapsed / 60),
-      duration_seconds: durationSeconds,
-      date:            localISODate(),
-      exercises: exercises.map((ex) => ({
-        name:   ex.name,
-        newPR:  ex.newPR || null,
-        sets:   ex.sets.filter((s) => s.done).map((s) => ({
+  // Build a workout payload from current state. `includeAll` keeps every set
+  // that has any data entered (used by "Save and Close" on a partial session);
+  // otherwise only completed sets are kept (the normal Finish flow).
+  const buildWorkout = (includeAll) => ({
+    name:             template?.name || "Quick Workout",
+    workout_type:     template?.workout_type || "strength",
+    duration_minutes: Math.floor(elapsed / 60),
+    duration_seconds: elapsed,
+    date:             localISODate(),
+    exercises: exercises.map((ex) => ({
+      name:  ex.name,
+      newPR: ex.newPR || null,
+      sets:  ex.sets
+        .filter((s) => includeAll ? (parseFloat(s.weight_kg) > 0 || parseInt(s.reps) > 0 || s.done) : s.done)
+        .map((s) => ({
           reps:      parseInt(s.reps) || 0,
           weight_kg: parseFloat(s.weight_kg) || 0,
           rpe:       parseInt(s.rpe) || null,
           isWarmup:  s.isWarmup || false,
         })),
-      })).filter((ex) => ex.sets.length > 0),
-    };
+    })).filter((ex) => ex.sets.length > 0),
+  });
+
+  // Persist to localStorage (offline cache) + backend (cross-device sync,
+  // analytics, AI coach). The set breakdown rides along in `details.exercises`.
+  const persistWorkout = (workout) => {
     saveWorkoutToHistory(workout);
+    if (workout.exercises.length === 0) return;
 
-    // Persist to the backend so sessions sync across devices, feed analytics,
-    // and are visible to the AI coach. localStorage stays as the offline cache.
-    if (workout.exercises.length > 0) {
-      const totalVolume = workout.exercises.reduce(
-        (s, e) => s + e.sets.reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0), 0
-      );
-      workoutAPI.save({
-        workout_type: workout.workout_type,
-        duration_minutes: Math.max(workout.duration_minutes, 1),
-        intensity: "moderate",
-        description: `${workout.name} — ${workout.exercises.length} exercises, ${Math.round(totalVolume)}kg total volume`,
-        date: workout.date,
-        details: {
-          exercises: workout.exercises.map(({ name, sets }) => ({ name, sets })),
-          total_volume_kg: Math.round(totalVolume),
-        },
-      }).then((res) => {
-        if (res?.queued) showToast("Workout saved offline — will sync later");
-      }).catch((err) => {
-        showToast(err.message || "Workout saved locally only — sync failed", "error");
-      });
+    const totalVolume = workout.exercises.reduce(
+      (s, e) => s + e.sets.reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0), 0
+    );
+    workoutAPI.save({
+      workout_type: workout.workout_type,
+      duration_minutes: Math.max(workout.duration_minutes, 1),
+      intensity: "moderate",
+      description: `${workout.name} — ${workout.exercises.length} exercises, ${Math.round(totalVolume)}kg total volume`,
+      date: workout.date,
+      details: {
+        name: workout.name,
+        exercises: workout.exercises.map(({ name, sets }) => ({ name, sets })),
+        total_volume_kg: Math.round(totalVolume),
+      },
+    }).then((res) => {
+      if (res?.queued) showToast("Workout saved offline — will sync later");
+    }).catch((err) => {
+      showToast(err.message || "Workout saved locally only — sync failed", "error");
+    });
 
-      for (const ex of workout.exercises) {
-        if (ex.newPR) {
-          prAPI.upsert({
-            exercise_name: ex.name,
-            weight_kg: ex.newPR.weight_kg,
-            reps: ex.newPR.reps,
-            date: workout.date,
-          }).catch(() => {});
-        }
+    for (const ex of workout.exercises) {
+      if (ex.newPR) {
+        prAPI.upsert({
+          exercise_name: ex.name,
+          weight_kg: ex.newPR.weight_kg,
+          reps: ex.newPR.reps,
+          date: workout.date,
+        }).catch(() => {});
       }
     }
+  };
 
+  const handleFinish = () => {
+    const workout = buildWorkout(false);
+    persistWorkout(workout);
     onFinish?.(workout);
     setSummary(workout);
   };
+
+  // "Save and Close" from the back-guard: persist whatever has been entered as
+  // a partial session, then leave — no celebratory summary screen.
+  const saveAndClose = () => {
+    const workout = buildWorkout(true);
+    persistWorkout(workout);
+    onFinish?.(workout);
+    setShowGuard(false);
+    if (workout.exercises.length > 0) showToast("Workout saved", "success");
+    onClose?.();
+  };
+
+  // Single entry point for every "back" gesture (nav arrow + hardware back).
+  // A session with any logged data prompts the three-way guard; an untouched
+  // session just closes. The summary screen's back simply dismisses it.
+  const requestClose = () => {
+    if (summaryRef.current) { setSummary(null); onClose?.(); return; }
+    const hasData = exercisesRef.current.some((ex) =>
+      ex.sets.some((s) => s.done || parseFloat(s.weight_kg) > 0 || parseInt(s.reps) > 0)
+    );
+    if (hasData) setShowGuard(true);
+    else onClose?.();
+  };
+
+  // Route the Android hardware back button through the same guard. Registering
+  // a backButton listener overrides Capacitor's default (navigate/exit) only
+  // while this session is mounted; it's removed on unmount, restoring default.
+  useEffect(() => {
+    if (!open) return;
+    let handle;
+    let active = true;
+    (async () => {
+      try {
+        const l = await CapacitorApp.addListener("backButton", () => {
+          if (showBrowser) { setShowBrowser(false); return; }
+          requestClose();
+        });
+        if (active) handle = l; else l.remove?.();
+      } catch {}
+    })();
+    return () => { active = false; handle?.remove?.(); };
+  }, [open, showBrowser]);
 
   if (!open) return null;
 
@@ -513,7 +573,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       {/* Header — paddingTop carries the top safe-area inset so the title/timer
           and the Finish button always clear the notch/status-bar zone. */}
       <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 12px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <button onClick={requestClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} color={T.text} />
         </button>
         <div style={{ flex: 1, textAlign: "center" }}>
@@ -673,6 +733,41 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
                 ~{estimate1RM(celebration.weight, celebration.reps)}kg estimated 1RM
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Back guard — never discard an in-progress session silently. */}
+      {showGuard && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 25, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }}
+          onClick={(e) => e.target === e.currentTarget && setShowGuard(false)}
+        >
+          <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, display: "flex", flexDirection: "column", gap: 12, animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+            <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Leave this workout?</div>
+              <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>You have unsaved progress in this session.</div>
+            </div>
+
+            <button
+              onClick={() => setShowGuard(false)}
+              style={{ padding: "14px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Continue Workout
+            </button>
+            <button
+              onClick={saveAndClose}
+              style={{ padding: "14px 0", background: T.elevated, color: T.text, border: `1px solid ${T.borderStrong}`, borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Save and Close
+            </button>
+            <button
+              onClick={() => { setShowGuard(false); onClose?.(); }}
+              style={{ padding: "14px 0", background: `${T.negative}18`, color: T.negative, border: `1px solid ${T.negative}44`, borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Discard Workout
+            </button>
           </div>
         </div>
       )}

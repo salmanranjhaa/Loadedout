@@ -449,8 +449,9 @@ export default function FullProfilePage({ profile, onClose, onLogout, onProfileU
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontFamily }}>
-      {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", padding: "16px 16px 8px", borderBottom: `0.5px solid ${T.border}`, flexShrink: 0 }}>
+      {/* Top bar — paddingTop carries the status-bar/notch inset so the header
+          never sits under the device notch on a full-screen overlay. */}
+      <div style={{ display: "flex", alignItems: "center", padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px 8px", borderBottom: `0.5px solid ${T.border}`, flexShrink: 0 }}>
         <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, color: T.text, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} />
         </button>

@@ -457,11 +457,14 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="log_workout",
             description=(
-                "Log a completed workout session. "
+                "Log a completed workout session with a full exercise breakdown. "
                 "workout_type: crossfit, running, football, yoga, cycling, stretch, "
-                "swimming, hiit, walking, boxing, pilates, climbing, trx, other. "
+                "swimming, hiit, walking, boxing, pilates, climbing, trx, strength, other. "
                 "intensity: light, moderate, intense. "
-                "exercises: list of exercise objects with name and optional sets/reps/notes. "
+                "name: optional short title for the session (e.g. 'Push Day'). "
+                "exercises: list of exercises, each with `name` and a `sets` array where "
+                "every set carries reps, weight_kg, optional rpe (1-10), unit and notes — "
+                "this drives the per-set breakdown shown in workout history. "
                 "energy_level: 1-10 scale."
             ),
             inputSchema={
@@ -469,13 +472,18 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "user_email": {"type": "string"},
                     "workout_type": {"type": "string"},
+                    "name": {"type": "string", "description": "Optional session title, e.g. 'Push Day'"},
                     "duration_minutes": {"description": "numeric"},
                     "intensity": {"type": "string", "enum": ["light", "moderate", "intense"]},
                     "description": {"type": "string"},
                     "exercises": {
                         "type": "array",
                         "items": {"type": "object"},
-                        "description": 'e.g. [{"name": "Pull-ups", "sets": 4, "reps": 8}]',
+                        "description": (
+                            "Preferred (per-set): "
+                            '[{"name": "Bench Press", "sets": [{"reps": 8, "weight_kg": 60, "rpe": 8, "unit": "kg", "notes": ""}]}]. '
+                            'Shorthand also accepted: [{"name": "Pull-ups", "sets": 4, "reps": 8, "weight_kg": 0}].'
+                        ),
                     },
                     "calories_burned_est": {"description": "numeric"},
                     "energy_level": { "minimum": 1, "maximum": 10},
@@ -855,6 +863,64 @@ def _f(val, default=None) -> Optional[float]:
         return float(val)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_workout_exercises(raw) -> list:
+    """I store a structured set-by-set breakdown so the app's history detail
+    screen can render exercises, sets, reps, weight, unit and notes.
+
+    I accept either the rich form ``{"name", "sets": [{"reps","weight_kg",...}]}``
+    or the shorthand ``{"name", "sets": 4, "reps": 8, "weight_kg": 60}`` and
+    always emit ``[{name, sets: [{reps, weight_kg, rpe, unit, notes}], notes}]``.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    out = []
+    for ex in raw:
+        if isinstance(ex, str):
+            out.append({"name": ex, "sets": [], "notes": None})
+            continue
+        if not isinstance(ex, dict):
+            continue
+
+        name = ex.get("name") or ex.get("exercise") or "Exercise"
+        unit = ex.get("unit") or "kg"
+        raw_sets = ex.get("sets")
+        norm_sets = []
+
+        if isinstance(raw_sets, list):
+            for s in raw_sets:
+                if not isinstance(s, dict):
+                    continue
+                norm_sets.append({
+                    "reps":      _i(s.get("reps"), 0),
+                    "weight_kg": _f(s.get("weight_kg", s.get("weight")), 0),
+                    "rpe":       _i(s.get("rpe")),
+                    "unit":      s.get("unit") or unit,
+                    "isWarmup":  bool(s.get("isWarmup", False)),
+                    "notes":     s.get("notes"),
+                })
+        elif isinstance(raw_sets, (int, float)) and raw_sets:
+            reps = _i(ex.get("reps"), 0)
+            weight = _f(ex.get("weight_kg", ex.get("weight")), 0)
+            for _ in range(int(raw_sets)):
+                norm_sets.append({
+                    "reps": reps, "weight_kg": weight, "rpe": None,
+                    "unit": unit, "isWarmup": False, "notes": None,
+                })
+        elif ex.get("reps") is not None or ex.get("weight_kg") is not None:
+            norm_sets.append({
+                "reps":      _i(ex.get("reps"), 0),
+                "weight_kg": _f(ex.get("weight_kg", ex.get("weight")), 0),
+                "rpe":       _i(ex.get("rpe")),
+                "unit":      unit,
+                "isWarmup":  False,
+                "notes":     ex.get("notes"),
+            })
+
+        out.append({"name": name, "sets": norm_sets, "notes": ex.get("notes")})
+    return out
 
 
 # ---- Tool implementations ----
@@ -1248,8 +1314,16 @@ async def _get_macro_summary(conn: asyncpg.Connection, user_id: int, args: dict)
 async def _log_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     log_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
     details = {}
+    if args.get("name"):
+        details["name"] = args["name"]
     if args.get("exercises"):
-        details["exercises"] = args["exercises"]
+        normalized = _normalize_workout_exercises(args["exercises"])
+        if normalized:
+            details["exercises"] = normalized
+            details["total_volume_kg"] = round(sum(
+                (s.get("weight_kg") or 0) * (s.get("reps") or 0)
+                for ex in normalized for s in ex["sets"]
+            ))
 
     row = await conn.fetchrow(
         """
@@ -1279,14 +1353,27 @@ async def _get_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> d
     rows = await conn.fetch(
         """
         SELECT id, date, workout_type, duration_minutes, intensity,
-               calories_burned_est, notes, energy_level
+               calories_burned_est, notes, energy_level, details
         FROM workout_logs
         WHERE user_id = $1 AND date >= $2
         ORDER BY date DESC
         """,
         user_id, start,
     )
-    return {"workouts": [_serialize(r) for r in rows], "total": len(rows)}
+    workouts = []
+    for r in rows:
+        w = _serialize(r)
+        details = w.get("details")
+        if isinstance(details, str):
+            try:
+                details = json.loads(details)
+            except (ValueError, TypeError):
+                details = None
+        if isinstance(details, dict):
+            w["name"] = details.get("name")
+            w["exercises"] = details.get("exercises", [])
+        workouts.append(w)
+    return {"workouts": workouts, "total": len(workouts)}
 
 
 async def _get_workout_stats(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
