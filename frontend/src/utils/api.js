@@ -6,9 +6,21 @@ import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import { isOnline, queueRequest, initOfflineQueue } from "./offline";
 
 // I handle all API communication with the FastAPI backend
-const API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
+const RAW_API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
 const FALLBACK_PUBLIC_WEB_ORIGIN = "https://loadedout.online";
 const PUBLIC_WEB_ORIGIN = import.meta.env.VITE_PUBLIC_WEB_ORIGIN || FALLBACK_PUBLIC_WEB_ORIGIN;
+
+// A relative API base ("/api/v1") only resolves correctly when the document is
+// actually served from the backend's host (the web app / PWA behind nginx).
+// Inside the native Capacitor WebView the origin is https://localhost, so a
+// relative request hits the bundled SPA and the local server returns
+// index.html ("<!DOCTYPE …") — which blows up as "Unexpected token '<'" the
+// moment the client tries to JSON.parse the login response. Pinning native
+// builds to the public origin guarantees every call reaches FastAPI even if the
+// bundle was built without the android env (relative VITE_API_URL).
+const API_BASE = (RAW_API_BASE.startsWith("/") && isNativePlatform())
+  ? `${PUBLIC_WEB_ORIGIN}${RAW_API_BASE}`
+  : RAW_API_BASE;
 
 export function getApiBase() {
   return API_BASE;
