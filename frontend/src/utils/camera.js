@@ -113,6 +113,34 @@ export async function pickImage({ source = "prompt" } = {}) {
 }
 
 /**
+ * I run a live, native barcode scan on Android using ML Kit (Google's on-device
+ * scanner). This is far more reliable than snapshotting a still photo and
+ * decoding it with ZXing — ML Kit does continuous multi-frame autofocus scanning
+ * and handles glare/skew. Returns the raw barcode string, or null if cancelled.
+ *
+ * Only call on native; on web use `startLiveBarcodeScan` instead.
+ */
+export async function scanBarcodeNative() {
+  const { BarcodeScanner } = await import("@capacitor-mlkit/barcode-scanning");
+
+  const perm = await BarcodeScanner.requestPermissions();
+  if (perm.camera !== "granted" && perm.camera !== "limited") {
+    throw new Error("Camera permission denied — enable it in app settings");
+  }
+
+  // Product barcodes only — restricting formats makes the scan lock on faster.
+  const formats = ["Ean13", "Ean8", "UpcA", "UpcE", "Code128", "Code39", "Itf"];
+  try {
+    const { barcodes } = await BarcodeScanner.scan({ formats });
+    return barcodes?.[0]?.rawValue || null; // empty array = user dismissed
+  } catch (err) {
+    const msg = String(err?.message || err || "").toLowerCase();
+    if (msg.includes("cancel")) return null;
+    throw err;
+  }
+}
+
+/**
  * I decode a single barcode from a still image data URL using ZXing's pure-JS
  * decoder (works inside the Android WebView, unlike `BarcodeDetector`).
  * Returns the raw barcode string, or null if none was found.

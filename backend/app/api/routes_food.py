@@ -17,8 +17,12 @@ from app.core.limiter import limiter
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/food", tags=["food"])
 
-# Legacy CGI endpoint — the only OFF endpoint with free-text search
-OFF_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
+# Search-a-licious — OFF's current free-text search service. The legacy
+# cgi/search.pl endpoint now returns 503 (OFF retired it for public use), so we
+# query the dedicated search host instead. It returns {"hits": [...]} where each
+# hit carries the same product_name/brands/code/nutriments fields we normalize.
+OFF_SEARCH_URL = "https://search.openfoodfacts.org/search"
+# Barcode lookups still use the per-product v2 API (works fine).
 OFF_FIELDS = "product_name,brands,nutriments,serving_quantity,code"
 
 # Tiny in-memory cache — food searches repeat constantly ("chicken", "rice"…)
@@ -34,6 +38,15 @@ def _round1(value) -> Optional[float]:
         return None
 
 
+def _first_brand(brands) -> Optional[str]:
+    """Brands arrive as a comma-string (v2 product API) or a list (Search-a-licious)."""
+    if isinstance(brands, list):
+        first = next((b for b in brands if b), "")
+    else:
+        first = (brands or "").split(",")[0]
+    return str(first).strip()[:40] or None
+
+
 def _normalize_product(product: dict) -> Optional[dict]:
     name = (product.get("product_name") or "").strip()
     nutriments = product.get("nutriments") or {}
@@ -42,7 +55,7 @@ def _normalize_product(product: dict) -> Optional[dict]:
         return None
     return {
         "name": name[:80],
-        "brand": (product.get("brands") or "").split(",")[0].strip()[:40] or None,
+        "brand": _first_brand(product.get("brands")),
         "calories": calories,
         "protein_g": _round1(nutriments.get("proteins_100g")) or 0,
         "carbs_g": _round1(nutriments.get("carbohydrates_100g")) or 0,
@@ -106,22 +119,22 @@ async def search_food(
         return {"items": cached[1], "source": "cache"}
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             resp = await client.get(
                 OFF_SEARCH_URL,
                 params={
-                    "search_terms": q.strip(),
-                    "search_simple": 1,
-                    "action": "process",
-                    "json": 1,
+                    "q": q.strip(),
                     "fields": OFF_FIELDS,
                     "page_size": limit * 2,  # over-fetch; many lack kcal data
-                    "sort_by": "unique_scans_n",
+                    "sort_by": "-unique_scans_n",  # most-scanned first
                 },
                 headers={"User-Agent": "LoadedOut/1.0 (personal fitness app)"},
             )
             resp.raise_for_status()
-            products = resp.json().get("products", [])
+            # Search-a-licious returns {"hits": [...]}; tolerate the legacy
+            # {"products": [...]} shape too in case the host ever changes.
+            body = resp.json()
+            products = body.get("hits") or body.get("products") or []
     except Exception as e:
         logger.warning("Open Food Facts search failed for %r: %s", q, e)
         return {"items": [], "source": "error"}

@@ -3,7 +3,6 @@ import { T, muscleColors } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Badge, BottomSheet } from "../../design/components";
 import { exerciseAPI } from "../../utils/api";
-import exerciseData from "../../lib/exercises.json";
 import MuscleMap from "./MuscleMap";
 
 const MUSCLE_GROUPS = [
@@ -20,21 +19,6 @@ const MUSCLE_GROUPS = [
 const EQUIPMENT   = ["all","barbell","dumbbell","cable","machine","bodyweight","kettlebell","bands"];
 const DIFFICULTIES = ["all","beginner","intermediate","advanced"];
 
-function ExerciseGif({ url, name, size = 48 }) {
-  if (!url) {
-    return (
-      <div style={{ width: size, height: size, borderRadius: 10, background: T.elevated, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Icon name="dumbbell" size={20} color={T.textDim} />
-      </div>
-    );
-  }
-  return (
-    <img src={url} alt={name} loading="lazy"
-      style={{ width: size, height: size, borderRadius: 10, objectFit: "cover", background: T.elevated, flexShrink: 0 }}
-    />
-  );
-}
-
 function ProxyGif({ exerciseId, name, size = "100%" }) {
   const [error, setError] = useState(false);
   if (error) {
@@ -47,6 +31,25 @@ function ProxyGif({ exerciseId, name, size = "100%" }) {
   return (
     <img src={`/api/v1/exercises/${exerciseId}/gif`} alt={name} onError={() => setError(true)}
       style={{ width: size === "100%" ? "100%" : size, borderRadius: 16, background: T.elevated, display: "block" }}
+    />
+  );
+}
+
+// I show a small list thumbnail via the backend GIF proxy (which caches and
+// injects the WorkoutX key — the raw gifUrl can't be loaded by an <img>). Falls
+// back to the dumbbell placeholder when no GIF is mapped or it fails.
+function ProxyThumb({ exerciseId, hasGif, name, size = 48 }) {
+  const [error, setError] = useState(false);
+  if (!hasGif || error) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: 10, background: T.elevated, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon name="dumbbell" size={20} color={T.textDim} />
+      </div>
+    );
+  }
+  return (
+    <img src={`/api/v1/exercises/${exerciseId}/gif`} alt={name} loading="lazy" onError={() => setError(true)}
+      style={{ width: size, height: size, borderRadius: 10, objectFit: "cover", background: "#F4F2EC", flexShrink: 0 }}
     />
   );
 }
@@ -200,6 +203,67 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
   );
 }
 
+// ── Backend record → display shape ───────────────────────────────────────────
+// I classify a DB exercise into one of the UI muscle groups using its body_part
+// and target muscles, so the filter chips work across the mixed-source library.
+const GROUP_KEYWORDS = {
+  chest:     ["chest", "pectoral"],
+  back:      ["back", "lat", "trapez", "trap", "spine", "erector"],
+  legs:      ["leg", "quad", "hamstring", "glute", "calf", "calve", "adductor", "abductor", "hip"],
+  shoulders: ["shoulder", "delt"],
+  arms:      ["arm", "bicep", "tricep", "forearm"],
+  core:      ["waist", "abs", "abdominal", "oblique", "core"],
+  cardio:    ["cardio", "cardiovascular"],
+};
+function classifyGroup(db) {
+  const hay = [
+    db.body_part || "",
+    ...(Array.isArray(db.primary_muscles) ? db.primary_muscles : []),
+  ].join(" ").toLowerCase();
+  for (const [group, words] of Object.entries(GROUP_KEYWORDS)) {
+    if (words.some((w) => hay.includes(w))) return group;
+  }
+  return "";
+}
+function toDisplay(db) {
+  return {
+    id:         db.id,
+    name:       db.name,
+    primary:    classifyGroup(db) || (db.body_part || "").toLowerCase(),
+    secondary:  Array.isArray(db.secondary_muscles) ? db.secondary_muscles.map((m) => String(m).toLowerCase()) : [],
+    equipment:  (db.equipment || "").toLowerCase(),
+    difficulty: db.level || "",
+    gif_url:    db.gif_url,
+  };
+}
+
+// ── Custom-exercise form — the escape hatch when search finds nothing ─────────
+function CustomExerciseForm({ initialName, onAdd, onCancel }) {
+  const [name, setName] = useState(initialName || "");
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.teal}44`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Add a custom exercise</div>
+      <div style={{ fontSize: 11, color: T.textMuted }}>Not in the library? Add it by name and it'll be tracked like any other.</div>
+      <input
+        autoFocus value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && name.trim() && onAdd({ name: name.trim() })}
+        placeholder="Exercise name, e.g. Smith Machine Calf Raise"
+        style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+      />
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onCancel}
+          style={{ flex: 1, padding: "9px 0", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9, color: T.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          Cancel
+        </button>
+        <button onClick={() => name.trim() && onAdd({ name: name.trim() })} disabled={!name.trim()}
+          style={{ flex: 2, padding: "9px 0", background: name.trim() ? T.teal : T.elevated, color: name.trim() ? "#0A0A0F" : T.textMuted, border: "none", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: name.trim() ? "pointer" : "default", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <Icon name="plus" size={13} color={name.trim() ? "#0A0A0F" : T.textMuted} /> Add Exercise
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
   const [muscle,    setMuscle]    = useState("all");
@@ -207,19 +271,38 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
   const [difficulty, setDifficulty] = useState("all");
   const [search,    setSearch]    = useState("");
   const [detailExercise, setDetailExercise] = useState(null);
+  const [items,     setItems]     = useState([]);
+  const [loading,   setLoading]   = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
 
+  // I search the full backend library (server-side) so every exercise we have is
+  // reachable — not just the small bundled list. Debounced to avoid spamming.
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    const handle = setTimeout(() => {
+      exerciseAPI.list({ q: search.trim(), limit: 150 })
+        .then((data) => setItems((data?.items || []).map(toDisplay)))
+        .catch(() => setItems([]))
+        .finally(() => setLoading(false));
+    }, search.trim() ? 350 : 0);
+    return () => clearTimeout(handle);
+  }, [search, open]);
+
+  // Equipment/difficulty/muscle are refined client-side — the library mixes
+  // capitalizations ("Body Weight" vs "bodyweight"), so exact backend filtering
+  // is unreliable; matching loosely here keeps the chips honest.
   const filtered = useMemo(() => {
-    return exerciseData.exercises.filter((ex) => {
-      if (muscle    !== "all" && ex.primary    !== muscle)    return false;
-      if (equipment !== "all" && ex.equipment  !== equipment) return false;
-      if (difficulty !== "all" && ex.difficulty !== difficulty) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        return ex.name.toLowerCase().includes(q) || ex.primary.toLowerCase().includes(q);
+    return items.filter((ex) => {
+      if (muscle     !== "all" && ex.primary    !== muscle)                                   return false;
+      if (difficulty !== "all" && (ex.difficulty || "").toLowerCase() !== difficulty)         return false;
+      if (equipment  !== "all") {
+        const e = ex.equipment.replace(/[^a-z]/g, "");
+        if (!e.includes(equipment.replace(/[^a-z]/g, "")) && !equipment.replace(/[^a-z]/g, "").includes(e)) return false;
       }
       return true;
     });
-  }, [muscle, equipment, difficulty, search]);
+  }, [items, muscle, equipment, difficulty]);
 
   return (
     <>
@@ -276,51 +359,60 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
           </select>
         </div>
 
-        <div style={{ fontSize: 11, color: T.textDim, fontWeight: 500 }}>
-          {filtered.length} exercise{filtered.length !== 1 ? "s" : ""}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 11, color: T.textDim, fontWeight: 500 }}>
+            {loading ? "Searching…" : `${filtered.length} exercise${filtered.length !== 1 ? "s" : ""}`}
+          </div>
+          {onSelectExercise && !showCustom && (
+            <button onClick={() => setShowCustom(true)}
+              style={{ background: "none", border: "none", color: T.teal, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+              <Icon name="plus" size={12} color={T.teal} /> Custom
+            </button>
+          )}
         </div>
+
+        {/* Custom-exercise escape hatch */}
+        {showCustom && onSelectExercise && (
+          <CustomExerciseForm
+            initialName={search.trim()}
+            onAdd={(ex) => { onSelectExercise(ex); setShowCustom(false); }}
+            onCancel={() => setShowCustom(false)}
+          />
+        )}
 
         {/* Exercise list */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto" }}>
           {filtered.map((ex) => (
             <button
               key={ex.id}
-              onClick={async () => {
-                try {
-                  const result = await exerciseAPI.list({ q: ex.name, limit: 1 });
-                  if (result.items?.length > 0) {
-                    const dbEx = result.items[0];
-                    setDetailExercise({
-                      ...ex,
-                      id:        dbEx.id,
-                      name:      dbEx.name,
-                      primary:   Array.isArray(dbEx.primary_muscles)   && dbEx.primary_muscles.length   > 0 ? dbEx.primary_muscles[0].toLowerCase()               : ex.primary,
-                      secondary: Array.isArray(dbEx.secondary_muscles) && dbEx.secondary_muscles.length > 0 ? dbEx.secondary_muscles.map((m) => m.toLowerCase())  : ex.secondary,
-                      equipment: dbEx.equipment ? dbEx.equipment.toLowerCase() : ex.equipment,
-                      difficulty: dbEx.level || ex.difficulty,
-                      gif_url:   dbEx.gif_url,
-                    });
-                  } else {
-                    setDetailExercise(ex);
-                  }
-                } catch {
-                  setDetailExercise(ex);
-                }
-              }}
+              onClick={() => setDetailExercise(ex)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}
             >
-              <ExerciseGif url={ex.gif_url} name={ex.name} size={48} />
+              <ProxyThumb exerciseId={ex.id} hasGif={!!ex.gif_url} name={ex.name} size={48} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 2 }}>{ex.name}</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Badge color={muscleColors[ex.primary] || T.teal} size="sm">{ex.primary}</Badge>
-                  <Badge color={T.textDim} size="sm">{ex.equipment}</Badge>
-                  <Badge color={ex.difficulty === "beginner" ? T.teal : ex.difficulty === "advanced" ? T.negative : T.amber} size="sm">{ex.difficulty}</Badge>
+                  {ex.primary && <Badge color={muscleColors[ex.primary] || T.teal} size="sm">{ex.primary}</Badge>}
+                  {ex.equipment && <Badge color={T.textDim} size="sm">{ex.equipment}</Badge>}
+                  {ex.difficulty && <Badge color={ex.difficulty === "beginner" ? T.teal : ex.difficulty === "advanced" ? T.negative : T.amber} size="sm">{ex.difficulty}</Badge>}
                 </div>
               </div>
               <Icon name="chev-right" size={14} color={T.textDim} />
             </button>
           ))}
+
+          {!loading && filtered.length === 0 && !showCustom && (
+            <div style={{ textAlign: "center", padding: "28px 16px", color: T.textDim, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Icon name="dumbbell" size={26} color={T.textDim} />
+              <div style={{ fontSize: 13 }}>No exercises{search.trim() ? ` for "${search.trim()}"` : ""}.</div>
+              {onSelectExercise && (
+                <button onClick={() => setShowCustom(true)}
+                  style={{ marginTop: 2, padding: "9px 16px", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="plus" size={13} color="#0A0A0F" /> Add "{search.trim() || "custom exercise"}"
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </BottomSheet>
 

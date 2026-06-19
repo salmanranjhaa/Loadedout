@@ -4,7 +4,7 @@ import { Icon } from "../../design/icons";
 import { Badge } from "../../design/components";
 import { mealsAPI, aiAPI, foodAPI, isNativePlatform } from "../../utils/api";
 import { showToast } from "../../utils/toast";
-import { pickImage, decodeBarcodeFromImage, startLiveBarcodeScan } from "../../utils/camera";
+import { pickImage, decodeBarcodeFromImage, startLiveBarcodeScan, scanBarcodeNative } from "../../utils/camera";
 
 // ── Hardcoded food database (per 100g) ────────────────────────────────────────
 const FOOD_DB = [
@@ -467,9 +467,19 @@ function RecentTab({ onSelect }) {
 }
 
 // ── Tab 5: Photo (Gemini Vision) ──────────────────────────────────────────────
+// I read the mime-type out of a data URL, clamped to what the backend accepts
+// (jpeg/png/webp). The native camera can hand back png/heic; sending the wrong
+// mime makes Gemini Vision reject the image, so we never just assume jpeg.
+function mimeFromDataUrl(dataUrl) {
+  const m = /^data:([^;]+);/.exec(dataUrl || "");
+  const mime = (m && m[1] || "").toLowerCase();
+  return ["image/jpeg", "image/png", "image/webp"].includes(mime) ? mime : "image/jpeg";
+}
+
 function PhotoTab({ onSelect }) {
   const [preview,  setPreview]  = useState(null);
   const [base64,   setBase64]   = useState(null);
+  const [mimeType, setMimeType] = useState("image/jpeg");
   const [hint,     setHint]     = useState("");
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState(null);
@@ -484,6 +494,7 @@ function PhotoTab({ onSelect }) {
       setResult(null);
       setPreview(img.dataUrl);
       setBase64(img.base64);
+      setMimeType(mimeFromDataUrl(img.dataUrl));
     } catch (err) {
       showToast(err?.message || "Couldn't open the camera", "error");
     } finally {
@@ -495,7 +506,7 @@ function PhotoTab({ onSelect }) {
     if (!base64) return;
     setLoading(true);
     try {
-      const r = await mealsAPI.photoEstimate({ image_base64: base64, mime_type: "image/jpeg", hint: hint || undefined });
+      const r = await mealsAPI.photoEstimate({ image_base64: base64, mime_type: mimeType, hint: hint || undefined });
       const est = r?.estimated;
       if (est && est.name !== "not food") {
         setResult(est);
@@ -503,13 +514,17 @@ function PhotoTab({ onSelect }) {
         showToast(est?.name === "not food" ? "That doesn't look like food 🤔" : "Couldn't analyze the photo", "error");
       }
     } catch (err) {
-      showToast(err.message || "Photo analysis failed", "error");
+      // 422 = AI couldn't read the food; anything else is usually connectivity.
+      const msg = err?.status === 422
+        ? "Couldn't read the food — try a clearer, well-lit photo"
+        : (err?.message || "Photo analysis failed — check your connection");
+      showToast(msg, "error");
     }
     setLoading(false);
   }
 
   function reset() {
-    setPreview(null); setBase64(null); setResult(null); setHint("");
+    setPreview(null); setBase64(null); setResult(null); setHint(""); setMimeType("image/jpeg");
   }
 
   return (
@@ -634,14 +649,22 @@ function BarcodeTab({ onSelect }) {
     setLoading(false);
   }
 
-  // Native: take a photo of the barcode, decode it locally with ZXing.
+  // Native: ML Kit live scanner (reliable). Falls back to a still-photo ZXing
+  // decode only if the native scanner module is unavailable on the device.
   async function scanNative() {
     if (busy) return;
     setBusy(true);
     try {
-      const img = await pickImage({ source: "camera" });
-      if (!img) return; // cancelled
-      const found = await decodeBarcodeFromImage(img.dataUrl);
+      let found = null;
+      try {
+        found = await scanBarcodeNative();
+        if (found === null) return; // user dismissed the scanner
+      } catch (mlErr) {
+        // ML Kit unavailable (no Play Services / module) — fall back to a snapshot.
+        const img = await pickImage({ source: "camera" });
+        if (!img) return;
+        found = await decodeBarcodeFromImage(img.dataUrl);
+      }
       if (found) {
         setCode(found);
         await lookup(found);
