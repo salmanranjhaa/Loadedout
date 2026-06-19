@@ -138,8 +138,11 @@ async def list_exercises(
     count_stmt = select(func.count(Exercise.id))
 
     if q:
-        stmt = stmt.where(Exercise.name.ilike(f"%{q}%"))
-        count_stmt = count_stmt.where(Exercise.name.ilike(f"%{q}%"))
+        # Token-based AND match so word order doesn't matter — "seated cable row"
+        # finds "Cable Seated Row". Each whitespace-separated token must appear.
+        for token in q.split():
+            stmt = stmt.where(Exercise.name.ilike(f"%{token}%"))
+            count_stmt = count_stmt.where(Exercise.name.ilike(f"%{token}%"))
     if body_part:
         stmt = stmt.where(Exercise.body_part.ilike(body_part))
         count_stmt = count_stmt.where(Exercise.body_part.ilike(body_part))
