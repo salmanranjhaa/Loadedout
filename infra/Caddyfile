@@ -58,3 +58,26 @@ polarisedu.info {
 www.polarisedu.info {
     redir https://polarisedu.info{uri} 301
 }
+
+# ERP-RAG — no owned domain, so use sslip.io wildcard DNS (hostname -> 34.17.37.87)
+# which lets Caddy obtain real Let's Encrypt certs without buying DNS.
+erp-rag.34.17.37.87.sslip.io {
+    reverse_proxy erp-rag-app:8000 {
+        flush_interval -1
+    }
+}
+
+strata.34.17.37.87.sslip.io {
+    reverse_proxy erp-openclaw:8001 {
+        flush_interval -1
+    }
+}
+
+# HBU Teaching Assistant — no owned domain, so use the sslip.io wildcard (-> 34.17.37.87).
+# hbu-web is the project's own Caddy that serves the SPA and proxies /api to hbu-backend.
+# flush_interval -1 keeps the chat SSE stream flowing token by token.
+hbu.34.17.37.87.sslip.io {
+    reverse_proxy hbu-web:80 {
+        flush_interval -1
+    }
+}
