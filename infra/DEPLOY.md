@@ -1,297 +1,210 @@
-# Deploying LifePlan to Google Cloud (Compute Engine + Cloud SQL)
+# Deploying LoadedOut
 
-This guide walks through deploying the entire stack to your GCP project.
-You will use Compute Engine for the app and Cloud SQL for the database.
+LoadedOut runs as a self-contained Docker Compose stack on a single GCP Compute
+Engine VM. There is no Cloud SQL, no Artifact Registry and no image push step —
+images are built on the VM straight from the checked-out repo.
 
-## Prerequisites
+> Superseded 2026-09-16. This file previously described a Cloud SQL + Artifact
+> Registry deployment on a VM named `lifeplan-vm` in `europe-west6`. That setup
+> is gone; the stack was migrated to the VM documented below.
 
-- GCP project with billing enabled
-- `gcloud` CLI installed and authenticated
-- Docker installed locally (for building images)
-- Your GCP project ID (run `gcloud config get-value project`)
+---
 
-## Step 1: Set Up Environment Variables
+## The production VM
 
-```bash
-# I set the project variables
-export PROJECT_ID="your-gcp-project-id"
-export REGION="europe-west6"       # Zurich, closest to St. Gallen
-export ZONE="europe-west6-a"
-export INSTANCE_NAME="lifeplan-vm"
-export SQL_INSTANCE="lifeplan-db"
-export DB_PASSWORD="$(openssl rand -base64 24)"
-
-echo "DB Password: $DB_PASSWORD"   # Save this somewhere safe!
-```
-
-## Step 2: Enable Required APIs
+| | |
+|---|---|
+| Instance | `doosra-prod` |
+| Zone | `europe-west12-c` |
+| GCP project | `project-4729265c-0c39-424d-84d` |
+| Machine type | `e2-highmem-2` (2 vCPU, 16 GB) |
+| External IP | `34.17.132.101` (static — referenced by `Caddyfile` and DNS) |
+| Checkout path | `/home/docloud19/projects/loaded-out` |
 
 ```bash
-gcloud services enable \
-  compute.googleapis.com \
-  sqladmin.googleapis.com \
-  aiplatform.googleapis.com \
-  artifactregistry.googleapis.com \
-  --project=$PROJECT_ID
+gcloud compute ssh --zone europe-west12-c doosra-prod --project project-4729265c-0c39-424d-84d
 ```
 
-## Step 3: Create Cloud SQL Instance (PostgreSQL)
+Two things to know before you touch anything:
+
+- **The checkout is owned by `docloud19`.** `gcloud compute ssh` logs you in as
+  your own user, so git will refuse the repo with a "dubious ownership" error.
+  Either work as `sudo -u docloud19` or pass
+  `git -c safe.directory=/home/docloud19/projects/loaded-out`.
+- **This VM is shared.** It also runs erp-rag, polaris, polaris_internal,
+  pitwall, bondcheck, gre-vocab-v2 and portfolio. Anything you restart that is
+  not scoped to this stack affects other projects — see *Shared Caddy* below.
+
+---
+
+## Stack layout
+
+Deploys run from `infra/`, so the Compose project name is **`infra`** and every
+container is named `infra-<service>-1`.
+
+| Service | Container | Image | Exposure |
+|---|---|---|---|
+| `frontend` | `infra-frontend-1` | Caddy + built React SPA | **host `:80` and `:443`** |
+| `backend` | `infra-backend-1` | FastAPI / uvicorn | internal `:8000` |
+| `mcp` | `infra-mcp-1` | MCP server | internal `:8003` |
+| `db` | `infra-db-1` | `pgvector/pgvector:pg16` | internal `:5432` |
+| `mongo` | `infra-mongo-1` | `mongo:7` | internal `:27017` |
+
+Only the frontend binds host ports. Postgres, Mongo, the backend and the MCP
+server are reachable only on the `lifeplan-net` bridge network.
+
+The network and all volumes are declared `external` in
+`docker-compose.prod.yml` — they predate the current Compose project name and
+are reused in place rather than recreated:
+
+```
+lifeplan-net            lifeplan-pgdata      lifeplan-mongodata
+lifeplan-gifs           lifeplan-caddy-data  lifeplan-caddy-config
+```
+
+If you ever delete these, the data is gone. `docker compose down -v` will not
+touch them (external volumes are never removed by Compose), but an explicit
+`docker volume rm` will.
+
+### Shared Caddy
+
+`infra-frontend-1` is the **only thing on the VM bound to :80/:443**. It
+terminates TLS and reverse-proxies for *every* project on the box, not just
+LoadedOut. Restarting or rebuilding it briefly takes all of them down.
+
+`infra/Caddyfile` is **baked into the frontend image** (`COPY infra/Caddyfile`
+in `frontend/Dockerfile`), so editing it has no effect until the frontend image
+is rebuilt. There is no bind mount and no `caddy reload` shortcut.
+
+---
+
+## Routine deploy
 
 ```bash
-# I create a small PostgreSQL instance (db-f1-micro is cheapest, ~$10/month)
-gcloud sql instances create $SQL_INSTANCE \
-  --database-version=POSTGRES_15 \
-  --tier=db-f1-micro \
-  --region=$REGION \
-  --storage-size=10GB \
-  --storage-auto-increase \
-  --project=$PROJECT_ID
-
-# I create the database
-gcloud sql databases create lifeplan_db \
-  --instance=$SQL_INSTANCE \
-  --project=$PROJECT_ID
-
-# I create the database user
-gcloud sql users create lifeplan_user \
-  --instance=$SQL_INSTANCE \
-  --password=$DB_PASSWORD \
-  --project=$PROJECT_ID
+cd /home/docloud19/projects/loaded-out
+sudo -u docloud19 git pull
+cd infra
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-## Step 4: Create Artifact Registry (Docker Repository)
+Backend-only change (leaves the shared Caddy untouched — prefer this):
 
 ```bash
-gcloud artifacts repositories create lifeplan-repo \
-  --repository-format=docker \
-  --location=$REGION \
-  --project=$PROJECT_ID
-
-# I configure Docker to push to GCR
-gcloud auth configure-docker ${REGION}-docker.pkg.dev
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build backend
 ```
 
-## Step 5: Build and Push Docker Images
+Caddy/frontend change — build first, then swap, to keep the outage to seconds:
 
 ```bash
-# I navigate to the project root
-cd /path/to/lifeplan
-
-# I build and push the backend
-docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest ./backend
-docker push ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest
-
-# I build the frontend with production API URL
-cd frontend
-echo "VITE_API_URL=/api/v1" > .env
-cd ..
-
-docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/frontend:latest ./frontend
-docker push ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/frontend:latest
+docker compose -f docker-compose.prod.yml --env-file .env.prod build frontend
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d frontend
 ```
 
-## Step 6: Create a Service Account for Vertex AI
+Validate the Caddyfile before you recreate anything:
 
 ```bash
-# I create a service account for the VM
-gcloud iam service-accounts create lifeplan-sa \
-  --display-name="LifePlan Service Account" \
-  --project=$PROJECT_ID
-
-# I grant Vertex AI permissions
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:lifeplan-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --role="roles/aiplatform.user"
-
-# I grant Cloud SQL client access
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:lifeplan-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --role="roles/cloudsql.client"
-
-# I grant Artifact Registry reader
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:lifeplan-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --role="roles/artifactregistry.reader"
+docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:alpine \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-## Step 7: Create Compute Engine VM
+### Migrations
 
 ```bash
-# I create an e2-small instance (2 vCPU, 2GB RAM, ~$15/month)
-gcloud compute instances create $INSTANCE_NAME \
-  --zone=$ZONE \
-  --machine-type=e2-small \
-  --image-family=cos-stable \
-  --image-project=cos-cloud \
-  --boot-disk-size=20GB \
-  --service-account=lifeplan-sa@${PROJECT_ID}.iam.gserviceaccount.com \
-  --scopes=cloud-platform \
-  --tags=http-server,https-server \
-  --project=$PROJECT_ID
-
-# I allow HTTP and HTTPS traffic
-gcloud compute firewall-rules create allow-http \
-  --allow=tcp:80 \
-  --target-tags=http-server \
-  --project=$PROJECT_ID
-
-gcloud compute firewall-rules create allow-https \
-  --allow=tcp:443 \
-  --target-tags=https-server \
-  --project=$PROJECT_ID
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend alembic upgrade head
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend alembic current
 ```
 
-## Step 8: Get the Cloud SQL Connection Name
+---
+
+## Configuration and secrets
+
+Everything lives in `infra/.env.prod`, which is **gitignored and exists only on
+the VM**. `infra/.env.prod.example` lists the keys. It is the single source for
+`SECRET_KEY`, `POSTGRES_PASSWORD`, the Google OAuth client credentials, the
+Groq fallback key and `WORKOUTX_API_KEY`.
+
+`docker-compose.prod.yml` overrides the DB URLs so the values in `.env.prod`
+never have to match container hostnames.
+
+Vertex AI authenticates via **Application Default Credentials from the GCE
+metadata server** — the VM's service account. `GOOGLE_APPLICATION_CREDENTIALS`
+is deliberately set to the empty string; there is no key file on the VM and
+none should be added.
+
+Also present on the VM but not in git:
+
+- `infra/secrets/loadedout-release.keystore` — Android release signing key.
+  **There is no other copy. Losing it means no more updates to the published
+  APK.**
+- `infra/apk/loadedout.apk` — bind-mounted into the frontend at
+  `/usr/share/caddy/loadedout.apk` and served from
+  `https://loadedout.online/loadedout.apk`. Drop a new build in place to ship
+  it; no rebuild needed.
+
+---
+
+## Cron jobs
+
+Both run as `docloud19` and log to `~/backups/loadedout/`:
+
+```
+20 3 * * *   infra/backup.sh       # Postgres + Mongo dumps, 14-day rotation
+*/5 * * * *  infra/healthcheck.sh  # probes /api/v1/health, alerts via ntfy.sh,
+                                   # restarts the stack after repeated failures
+```
+
+Restore a Postgres dump with:
 
 ```bash
-# I get the connection name for the SQL proxy
-gcloud sql instances describe $SQL_INSTANCE \
-  --format="value(connectionName)" \
-  --project=$PROJECT_ID
-
-# It will be something like: your-project:europe-west6:lifeplan-db
-export SQL_CONNECTION_NAME="$PROJECT_ID:$REGION:$SQL_INSTANCE"
+docker exec -i infra-db-1 pg_restore -U lifeplan_user -d lifeplan_db --clean \
+  < ~/backups/loadedout/pg_YYYYMMDD_HHMMSS.dump
 ```
 
-## Step 9: SSH into the VM and Deploy
+---
+
+## DNS
+
+`loadedout.online` and the `salmanranjha.me` subdomains are GoDaddy A records
+pointing at `34.17.132.101`. Projects without an owned domain use sslip.io
+wildcard hostnames (`<name>.34.17.132.101.sslip.io`), which lets Caddy issue
+real Let's Encrypt certs with no DNS setup.
+
+**If the VM's external IP ever changes, `infra/Caddyfile` must be updated and
+the frontend rebuilt**, or every sslip.io host on the box stops resolving to a
+valid cert. This is the single most common way to break the VM.
+
+---
+
+## Verifying a deploy
 
 ```bash
-gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --project=$PROJECT_ID
+./scripts/smoke_test.sh              # from the repo root
+curl -s https://loadedout.online/api/v1/health
+docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f backend
 ```
 
-Once inside the VM:
-
-```bash
-# I authenticate Docker with Artifact Registry
-docker-credential-gcr configure-docker --registries=${REGION}-docker.pkg.dev
-
-# I pull the Cloud SQL proxy
-docker pull gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.1
-
-# I create a Docker network
-docker network create lifeplan-net
-
-# I start the Cloud SQL proxy
-docker run -d \
-  --name sql-proxy \
-  --network lifeplan-net \
-  --restart always \
-  gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.1 \
-  --address 0.0.0.0 \
-  --port 5432 \
-  ${SQL_CONNECTION_NAME}
-
-# I start the backend
-docker run -d \
-  --name backend \
-  --network lifeplan-net \
-  --restart always \
-  -e DATABASE_URL="postgresql+asyncpg://lifeplan_user:${DB_PASSWORD}@sql-proxy:5432/lifeplan_db" \
-  -e DATABASE_URL_SYNC="postgresql+psycopg2://lifeplan_user:${DB_PASSWORD}@sql-proxy:5432/lifeplan_db" \
-  -e SECRET_KEY="$(openssl rand -base64 32)" \
-  -e GCP_PROJECT_ID="${PROJECT_ID}" \
-  -e GCP_REGION="europe-west6" \
-  -e VERTEX_AI_MODEL="gemini-1.5-flash" \
-  -p 8000:8000 \
-  ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest
-
-# I run the database migration and seed
-docker exec backend python -c "
-import asyncio
-from app.core.database import engine, Base
-from app.models.user import User
-from app.models.schedule import ScheduleEvent, ScheduleModification
-from app.models.meal import MealTemplate, MealLog, GroceryList
-from app.models.analytics import WeightLog, WorkoutLog, DailySnapshot
-
-async def init():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print('Tables created.')
-
-asyncio.run(init())
-"
-
-# I run the seed script
-docker exec backend python -m scripts.seed
-
-# I start the frontend
-docker run -d \
-  --name frontend \
-  --network lifeplan-net \
-  --restart always \
-  -p 80:80 \
-  ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/frontend:latest
-```
-
-## Step 10: Get the External IP
-
-```bash
-# I get the VM's external IP
-gcloud compute instances describe $INSTANCE_NAME \
-  --zone=$ZONE \
-  --format="value(networkInterfaces[0].accessConfigs[0].natIP)" \
-  --project=$PROJECT_ID
-```
-
-Open `http://<EXTERNAL_IP>` in your phone browser. Since it is a PWA, you can "Add to Home Screen" for an app like experience.
-
-## Step 11: (Optional) Set Up a Domain + HTTPS
-
-```bash
-# I reserve a static IP
-gcloud compute addresses create lifeplan-ip \
-  --region=$REGION \
-  --project=$PROJECT_ID
-
-# I point your domain DNS A record to this IP
-# Then install Certbot on the VM for Let's Encrypt HTTPS:
-
-# SSH into VM
-gcloud compute ssh $INSTANCE_NAME --zone=$ZONE
-
-# I install certbot via Docker
-docker run -it --rm \
-  -v /etc/letsencrypt:/etc/letsencrypt \
-  -v /var/lib/letsencrypt:/var/lib/letsencrypt \
-  -p 80:80 \
-  certbot/certbot certonly --standalone -d yourdomain.com
-```
-
-## Estimated Monthly Cost
-
-| Service                  | Cost (approx)       |
-|--------------------------|---------------------|
-| Compute Engine (e2-small)| ~$15/month          |
-| Cloud SQL (db-f1-micro)  | ~$10/month          |
-| Vertex AI (Gemini Flash) | ~$2-5/month (usage) |
-| Artifact Registry        | ~$1/month           |
-| **Total**                | **~$28-31/month**   |
-
-## Updating the App
-
-```bash
-# I rebuild and push from local machine
-docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest ./backend
-docker push ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest
-
-# I SSH into VM and restart
-gcloud compute ssh $INSTANCE_NAME --zone=$ZONE
-docker pull ${REGION}-docker.pkg.dev/${PROJECT_ID}/lifeplan-repo/backend:latest
-docker stop backend && docker rm backend
-# I re-run the backend docker run command from Step 9
-```
+---
 
 ## Troubleshooting
 
-**Backend not connecting to Cloud SQL:**
-Check if the sql-proxy container is running: `docker logs sql-proxy`
+**`git` refuses the repo — "dubious ownership"**
+You are not `docloud19`. Use `sudo -u docloud19 git ...` or
+`git -c safe.directory=/home/docloud19/projects/loaded-out ...`.
 
-**Vertex AI errors:**
-Ensure the service account has `roles/aiplatform.user` and the API is enabled.
+**A Caddyfile edit did nothing**
+It is baked into the image. Rebuild the frontend.
 
-**Frontend not loading:**
-Check nginx config and ensure the backend container is named "backend" on the same Docker network.
+**502 on a subdomain**
+Caddy is proxying to a container that is not running. Compare the upstream
+names in `Caddyfile` against `docker ps`; remember other projects' containers
+must be joined to `lifeplan-net` (usually via a `docker-compose.override.yml`
+in that project) for Caddy to resolve them by name.
 
-**PWA not installing on phone:**
-You need HTTPS (Step 11) for the PWA "Add to Home Screen" prompt to appear. Without HTTPS, the app still works in the browser, just without the install prompt.
+**Vertex AI errors**
+Check the VM service account still has `roles/aiplatform.user`. Do not add a
+credentials file — ADC from the metadata server is intentional.
+
+**Backend cannot reach Postgres**
+`docker compose ... ps` should show `db` healthy. The DB has no host port
+binding by design; connect through `docker exec infra-db-1 psql -U lifeplan_user -d lifeplan_db`.

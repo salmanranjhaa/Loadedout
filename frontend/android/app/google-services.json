@@ -18,7 +18,7 @@
           "client_type": 1,
           "android_info": {
             "package_name": "com.antigravity.lifeplan",
-            "certificate_hash": "REPLACE_WITH_SHA1_FROM_GCP_CONSOLE"
+            "certificate_hash": "bf1810958a62d90f738cc4b6e5dd9036cc7cb477"
           }
         },
         {

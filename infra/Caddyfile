@@ -99,15 +99,6 @@ strata.34.17.132.101.sslip.io {
     }
 }
 
-# HBU Teaching Assistant — no owned domain, so use the sslip.io wildcard (-> 34.17.132.101).
-# hbu-web is the project's own Caddy that serves the SPA and proxies /api to hbu-backend.
-# flush_interval -1 keeps the chat SSE stream flowing token by token.
-hbu.34.17.132.101.sslip.io {
-    reverse_proxy hbu-web:80 {
-        flush_interval -1
-    }
-}
-
 # PitWall F1 Strategy Simulator — sslip.io wildcard (-> 34.17.132.101).
 # pitwall-web is the project's own Caddy serving the SPA and proxying /api
 # to pitwall-backend. flush_interval -1 keeps the race SSE stream live.
@@ -122,13 +113,4 @@ pitwall.34.17.132.101.sslip.io {
 # container listens on 3000 (host 127.0.0.1:3010 binding is for local checks only).
 internal.polarisedu.info {
     reverse_proxy polaris-internal:3000
-}
-
-# Tresor HF — Swiss law RAG assistant (FastAPI, Groq) from ~/projects/Tresor HF.
-# Joined to lifeplan-net via a compose override (alias tresor-hf-app); the repo's
-# bundled Caddy is disabled on this VM. flush_interval -1 keeps chat SSE streaming.
-tresor-hf.34.17.132.101.sslip.io {
-    reverse_proxy tresor-hf-app:8787 {
-        flush_interval -1
-    }
 }

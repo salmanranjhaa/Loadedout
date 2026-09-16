@@ -37,7 +37,7 @@ async def lifespan(_app: FastAPI):
     if not settings.GCP_PROJECT_ID:
         logger.warning("GCP_PROJECT_ID is not set — Vertex AI (chat) will not work.")
     if not settings.MONGODB_URI:
-        logger.warning("MONGODB_URI is not set — chat history persistence will be disabled.")
+        logger.warning("MONGODB_URI is not set — profile picture storage will be disabled.")
     logger.info(f"Starting {settings.APP_NAME} — model: {settings.VERTEX_AI_MODEL}")
     yield
 
