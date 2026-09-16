@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Nightly backup for Loaded-Out: Postgres + Mongo dumps with 14-day rotation.
-# Cron: 20 3 * * * /home/pehlacloud/projects/loaded-out/infra/backup.sh >> /home/pehlacloud/backups/loadedout/backup.log 2>&1
+# Cron: 20 3 * * * $HOME/projects/loaded-out/infra/backup.sh >> $HOME/backups/loadedout/backup.log 2>&1
 set -euo pipefail
 
-BACKUP_DIR="/home/pehlacloud/backups/loadedout"
+BACKUP_DIR="${LOADEDOUT_BACKUP_DIR:-$HOME/backups/loadedout}"
 STAMP=$(date +%Y%m%d_%H%M%S)
 KEEP_DAYS=14
 

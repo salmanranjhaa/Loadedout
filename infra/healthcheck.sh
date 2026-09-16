@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Health monitor for loadedout.online — alerts via ntfy.sh and auto-restarts
 # the stack after repeated failures.
-# Cron: */5 * * * * /home/pehlacloud/projects/loaded-out/infra/healthcheck.sh >> /home/pehlacloud/backups/loadedout/health.log 2>&1
+# Cron: */5 * * * * $HOME/projects/loaded-out/infra/healthcheck.sh >> $HOME/backups/loadedout/health.log 2>&1
 set -u
 
 URL="https://loadedout.online/api/v1/health"
 NTFY_TOPIC="loadedout-alerts-pehlacloud-x7k2"   # subscribe at https://ntfy.sh/loadedout-alerts-pehlacloud-x7k2
 STATE_FILE="/tmp/loadedout_health_failcount"
-COMPOSE_DIR="/home/pehlacloud/projects/loaded-out/infra"
+COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 notify() {
   curl -s -m 10 -H "Title: LoadedOut health" -d "$1" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true

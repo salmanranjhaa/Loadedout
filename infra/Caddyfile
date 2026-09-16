@@ -60,7 +60,7 @@ www.polarisedu.info {
 }
 
 # Project subdomains on the owned salmanranjha.me domain. Each needs a GoDaddy
-# A record (host = subdomain, value = 34.17.100.46); Caddy retries the Let's
+# A record (host = subdomain, value = 34.17.132.101); Caddy retries the Let's
 # Encrypt cert automatically until the DNS record exists, so these blocks are
 # safe to keep before the records are added.
 pitwall.salmanranjha.me {
@@ -85,34 +85,50 @@ gre.salmanranjha.me {
     reverse_proxy gre-v2-frontend:80
 }
 
-# ERP-RAG — no owned domain, so use sslip.io wildcard DNS (hostname -> 34.17.100.46)
+# ERP-RAG — no owned domain, so use sslip.io wildcard DNS (hostname -> 34.17.132.101)
 # which lets Caddy obtain real Let's Encrypt certs without buying DNS.
-erp-rag.34.17.100.46.sslip.io {
+erp-rag.34.17.132.101.sslip.io {
     reverse_proxy erp-rag-app:8000 {
         flush_interval -1
     }
 }
 
-strata.34.17.100.46.sslip.io {
+strata.34.17.132.101.sslip.io {
     reverse_proxy erp-openclaw:8001 {
         flush_interval -1
     }
 }
 
-# HBU Teaching Assistant — no owned domain, so use the sslip.io wildcard (-> 34.17.100.46).
+# HBU Teaching Assistant — no owned domain, so use the sslip.io wildcard (-> 34.17.132.101).
 # hbu-web is the project's own Caddy that serves the SPA and proxies /api to hbu-backend.
 # flush_interval -1 keeps the chat SSE stream flowing token by token.
-hbu.34.17.100.46.sslip.io {
+hbu.34.17.132.101.sslip.io {
     reverse_proxy hbu-web:80 {
         flush_interval -1
     }
 }
 
-# PitWall F1 Strategy Simulator — sslip.io wildcard (-> 34.17.100.46).
+# PitWall F1 Strategy Simulator — sslip.io wildcard (-> 34.17.132.101).
 # pitwall-web is the project's own Caddy serving the SPA and proxying /api
 # to pitwall-backend. flush_interval -1 keeps the race SSE stream live.
-pitwall.34.17.100.46.sslip.io {
+pitwall.34.17.132.101.sslip.io {
     reverse_proxy pitwall-web:80 {
+        flush_interval -1
+    }
+}
+
+# Polaris internal platform (Node/Hono + tRPC, SQLite, RAG chatbot) from
+# ~/projects/polaris_internal. Joined to lifeplan-net via a compose override;
+# container listens on 3000 (host 127.0.0.1:3010 binding is for local checks only).
+internal.polarisedu.info {
+    reverse_proxy polaris-internal:3000
+}
+
+# Tresor HF — Swiss law RAG assistant (FastAPI, Groq) from ~/projects/Tresor HF.
+# Joined to lifeplan-net via a compose override (alias tresor-hf-app); the repo's
+# bundled Caddy is disabled on this VM. flush_interval -1 keeps chat SSE streaming.
+tresor-hf.34.17.132.101.sslip.io {
+    reverse_proxy tresor-hf-app:8787 {
         flush_interval -1
     }
 }
