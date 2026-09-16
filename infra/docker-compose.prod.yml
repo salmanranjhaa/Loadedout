@@ -1,13 +1,16 @@
-# LifePlan — Standalone Production Stack
-# Fully self-contained: own network, own volumes, own ports.
-# No overlap with erp-rag or any other project on this VM.
+# LoadedOut — Production Stack (doosra-prod, europe-west12-c)
 #
-# Port allocation (all free on the VM):
-#   80   → nginx (serves React SPA + proxies /api/ to backend)
-#   8002 → FastAPI backend (also exposed for Android APK direct access)
-#   DB and Mongo are internal only (no host port binding in prod)
+# Host port bindings — the frontend is the ONLY service that binds any:
+#   80, 443 → frontend (Caddy: serves the React SPA, proxies /api/ and /mcp/)
+#   backend, mcp, db and mongo are reachable only on lifeplan-net.
 #
-# Deploy from ~/projects/lifeplan/infra/
+# NOTE: this Caddy terminates TLS for EVERY project on this VM (erp-rag,
+# polaris, pitwall, bondcheck, gre-vocab, portfolio), not just LoadedOut.
+# Recreating the frontend container briefly takes all of them down — prefer
+# `docker exec infra-frontend-1 caddy reload --config /etc/caddy/Caddyfile
+# --adapter caddyfile` for routing-only changes. See DEPLOY.md.
+#
+# Deploy from ~/projects/loaded-out/infra/ (Compose project name: "infra")
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 #
 # First-time DB migration (after up):
@@ -90,7 +93,7 @@ services:
       context: ..
       dockerfile: frontend/Dockerfile
       args:
-        # Relative URL — nginx proxies /api/ to the backend container internally
+        # Relative URL — Caddy proxies /api/ to the backend container internally
         VITE_API_URL: /api/v1
     restart: unless-stopped
     ports:
@@ -99,6 +102,14 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      # Caddy config. The Dockerfile also COPYs this file so the image stays
+      # self-contained, but the bind mount wins at runtime — which means a
+      # routing change is an edit + zero-downtime reload rather than a full
+      # image rebuild. This container terminates TLS for every project on the
+      # VM, so avoid recreating it when a reload will do:
+      #   docker exec infra-frontend-1 \
+      #     caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Published Android APK — served at /loadedout.apk. Bind-mounted (not baked
       # into the image or committed) so it survives rebuilds; replace the host
       # file in infra/apk/ to ship a new build.

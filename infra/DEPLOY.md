@@ -72,9 +72,17 @@ touch them (external volumes are never removed by Compose), but an explicit
 terminates TLS and reverse-proxies for *every* project on the box, not just
 LoadedOut. Restarting or rebuilding it briefly takes all of them down.
 
-`infra/Caddyfile` is **baked into the frontend image** (`COPY infra/Caddyfile`
-in `frontend/Dockerfile`), so editing it has no effect until the frontend image
-is rebuilt. There is no bind mount and no `caddy reload` shortcut.
+`infra/Caddyfile` is bind-mounted into the container, so a routing change does
+**not** need an image rebuild — edit the file and reload in place:
+
+```bash
+docker exec infra-frontend-1 \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+That is zero-downtime and is what you should reach for. The Dockerfile still
+`COPY`s the same file so the image works standalone, but the bind mount wins at
+runtime.
 
 ---
 
@@ -93,7 +101,16 @@ Backend-only change (leaves the shared Caddy untouched — prefer this):
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build backend
 ```
 
-Caddy/frontend change — build first, then swap, to keep the outage to seconds:
+Routing-only change (no rebuild, no downtime — see *Shared Caddy*):
+
+```bash
+docker exec infra-frontend-1 \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+Frontend SPA change — build first, then swap, to keep the outage to seconds.
+This recreates the shared Caddy, so it briefly interrupts every project on the
+VM:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod build frontend
@@ -193,7 +210,9 @@ You are not `docloud19`. Use `sudo -u docloud19 git ...` or
 `git -c safe.directory=/home/docloud19/projects/loaded-out ...`.
 
 **A Caddyfile edit did nothing**
-It is baked into the image. Rebuild the frontend.
+The file is bind-mounted but Caddy only re-reads it on reload. Run the
+`caddy reload` above. If that errors, `caddy validate` the file first — a bad
+config is rejected and the old one stays live, which is the desired behaviour.
 
 **502 on a subdomain**
 Caddy is proxying to a container that is not running. Compare the upstream
