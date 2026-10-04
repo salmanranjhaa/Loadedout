@@ -235,7 +235,7 @@ function MealRow({ meal, onDelete, deleting, onClick }) {
       <button
         onClick={(e) => {
           e.stopPropagation();
-          onDelete(meal.id);
+          if (window.confirm(`Delete ${meal.name}?`)) onDelete(meal.id);
         }}
         disabled={deleting}
         style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: T.textDim, borderRadius: 6, opacity: deleting ? 0.4 : 1, flexShrink: 0 }}
@@ -445,9 +445,12 @@ export default function MealsPage({ profile, onProfile }) {
 
   async function handleAddFood(food, groupName) {
     const mealType = (groupName || "breakfast").toLowerCase().replace("snacks", "snack");
+    // ponytail: the amount rides in the name ("Chicken Breast (200 g)") because
+    // meal logs have no portion column; add one if grams need to be edited later.
+    const name = food.portion_g ? `${food.name} (${food.portion_g} g)` : food.name;
     try {
       const res = await mealsAPI.logMeal({
-        name: food.name,
+        name,
         meal_type: mealType,
         calories: food.calories || 0,
         protein_g: food.protein_g || 0,
@@ -469,7 +472,7 @@ export default function MealsPage({ profile, onProfile }) {
         }).catch(() => {});
       }
       setAddModal(null);
-      showToast(res?.queued ? "Saved offline — will sync later" : `${food.name} logged`, "success");
+      showToast(res?.queued ? "Saved offline — will sync later" : `${name} logged`, "success");
       refresh();
     } catch (err) {
       showToast(err.message || "Couldn't log meal", "error");
@@ -487,6 +490,7 @@ export default function MealsPage({ profile, onProfile }) {
   }
 
   async function handleDeleteMealFromDetail(id) {
+    if (!window.confirm(`Delete ${selectedMeal?.name || "this meal"}?`)) return;
     try {
       await mealsAPI.deleteLog(id);
       setSelectedMeal(null);

@@ -3,6 +3,7 @@ import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { PageHeader, PageScroll, SectionHead, MiniStat, IllustratedEmptyState, SkeletonCard, LoadingDots } from "../design/components";
 import { analyticsAPI, workoutAPI, prAPI } from "../utils/api";
+import { mergeWorkoutHistory } from "../utils/workouts";
 import WeightChart from "../components/charts/WeightChart";
 import VolumeChart from "../components/charts/VolumeChart";
 import exerciseData from "../lib/exercises.json";
@@ -405,16 +406,7 @@ export default function AnalyticsPage({ profile, onProfile }) {
   const localHistory = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("lo_workout_history") || "[]"); } catch { return []; }
   }, []);
-  const allWorkouts = useMemo(() => {
-    const combined = [...workouts, ...localHistory];
-    const seen = new Set();
-    return combined.filter((w) => {
-      const key = w.id || w.loggedAt || w.date;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [workouts, localHistory]);
+  const allWorkouts = useMemo(() => mergeWorkoutHistory(workouts, localHistory), [workouts, localHistory]);
 
   const totalSessions = allWorkouts.length;
   const totalMinutes  = allWorkouts.reduce((s, w) => s + (w.duration_minutes || w.duration || 0), 0);

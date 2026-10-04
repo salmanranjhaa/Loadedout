@@ -3,8 +3,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Annotated, Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
@@ -15,15 +15,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meals", tags=["meals"])
 
+# Calories and macros can never be negative; a -100 kcal edit used to push the
+# day's total below zero.
+NonNeg = Annotated[float, Field(ge=0)]
+
 
 class MealLogCreate(BaseModel):
     meal_type: str
     template_id: Optional[int] = None
     name: str
-    calories: float
-    protein_g: float
-    carbs_g: Optional[float] = None
-    fat_g: Optional[float] = None
+    calories: NonNeg
+    protein_g: NonNeg
+    carbs_g: Optional[NonNeg] = None
+    fat_g: Optional[NonNeg] = None
     custom_ingredients: Optional[list] = None
     notes: Optional[str] = None
     # Client-local date (YYYY-MM-DD); server date is UTC and can be a day off
@@ -48,11 +52,11 @@ class ManualMealEntry(BaseModel):
 class MealTemplateCreate(BaseModel):
     name: str
     meal_type: str
-    calories: float
-    protein_g: float
-    carbs_g: Optional[float] = None
-    fat_g: Optional[float] = None
-    fiber_g: Optional[float] = None
+    calories: NonNeg
+    protein_g: NonNeg
+    carbs_g: Optional[NonNeg] = None
+    fat_g: Optional[NonNeg] = None
+    fiber_g: Optional[NonNeg] = None
     ingredients: Optional[list] = []
     prep_instructions: Optional[str] = None
 
@@ -60,10 +64,10 @@ class MealTemplateCreate(BaseModel):
 class MealTemplateUpdate(BaseModel):
     name: Optional[str] = None
     meal_type: Optional[str] = None
-    calories: Optional[float] = None
-    protein_g: Optional[float] = None
-    carbs_g: Optional[float] = None
-    fat_g: Optional[float] = None
+    calories: Optional[NonNeg] = None
+    protein_g: Optional[NonNeg] = None
+    carbs_g: Optional[NonNeg] = None
+    fat_g: Optional[NonNeg] = None
     ingredients: Optional[list] = None
     prep_instructions: Optional[str] = None
 
@@ -170,10 +174,10 @@ async def delete_meal_template(
 class MealLogUpdate(BaseModel):
     name: Optional[str] = None
     meal_type: Optional[str] = None
-    calories: Optional[float] = None
-    protein_g: Optional[float] = None
-    carbs_g: Optional[float] = None
-    fat_g: Optional[float] = None
+    calories: Optional[NonNeg] = None
+    protein_g: Optional[NonNeg] = None
+    carbs_g: Optional[NonNeg] = None
+    fat_g: Optional[NonNeg] = None
 
 
 @router.put("/log/{log_id}")

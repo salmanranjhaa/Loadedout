@@ -61,6 +61,9 @@ function nowLinePx() {
 function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...initial });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  // "HH:MM" strings compare correctly as text.
+  const badTimes = !!form.start_time && !!form.end_time && form.end_time <= form.start_time;
+  const canSave = !saving && !!form.title.trim() && !badTimes;
 
   return (
     <div
@@ -166,6 +169,9 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
             </div>
           ))}
         </div>
+        {badTimes && (
+          <div style={{ fontSize: 12, color: T.negative, marginTop: -6 }}>End time must be after the start time.</div>
+        )}
 
         {/* Location */}
         <div>
@@ -217,13 +223,13 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
             Cancel
           </button>
           <button
-            onClick={() => form.title.trim() && onSave(form)}
-            disabled={saving || !form.title.trim()}
+            onClick={() => canSave && onSave(form)}
+            disabled={!canSave}
             style={{
               flex: 2, padding: "12px", borderRadius: 12,
-              background: saving || !form.title.trim() ? T.elevated : T.blue,
-              border: "none", color: saving || !form.title.trim() ? T.textDim : "#0A0A0F",
-              fontSize: 14, fontWeight: 700, cursor: saving || !form.title.trim() ? "default" : "pointer",
+              background: canSave ? T.blue : T.elevated,
+              border: "none", color: canSave ? "#0A0A0F" : T.textDim,
+              fontSize: 14, fontWeight: 700, cursor: canSave ? "pointer" : "default",
               fontFamily: T.fontFamily, transition: "all 0.15s",
             }}
           >
@@ -444,6 +450,8 @@ export default function SchedulePage({ profile, onProfile }) {
   }
 
   async function handleDelete(eventId) {
+    const ev = events.find(e => e.id === eventId);
+    if (!window.confirm(`Delete ${ev?.title || "this event"}?`)) return;
     try {
       await scheduleAPI.delete(eventId);
       setEvents(prev => prev.filter(e => e.id !== eventId));

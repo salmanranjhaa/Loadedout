@@ -205,11 +205,13 @@ function WorkoutSummary({ workout, onClose }) {
   const durationStr = `${Math.floor(workout.duration_seconds / 60)}m ${workout.duration_seconds % 60}s`;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, animation: "lo-fade-up 0.3s ease" }}>
+    // Stops above the fixed tab bar (like the live session does) and scrolls on
+    // short screens, so "Done" is never hidden under the bar.
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: T.navHeight, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: 24, animation: "lo-fade-up 0.3s ease" }}>
       {/* Glow orb */}
       <div style={{ position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${T.teal}22, transparent 70%)`, pointerEvents: "none" }} />
 
-      <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+      <div style={{ width: "100%", maxWidth: 380, margin: "auto 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
         {/* Trophy + title */}
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>
@@ -402,47 +404,45 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
     setShowBrowser(false);
   }, []);
 
-  const addSet = (exIndex) => {
-    setExercises((prev) => {
-      const next    = [...prev];
-      const lastSet = next[exIndex].sets[next[exIndex].sets.length - 1];
-      next[exIndex].sets.push({
-        reps:      lastSet ? String(lastSet.reps) : "",
-        weight_kg: lastSet ? String(lastSet.weight_kg) : "",
-        rpe:       "",
-        done:      false,
-        isWarmup:  false,
-      });
-      return next;
-    });
-  };
+  // State updates below copy instead of mutating: React may run an updater
+  // twice (StrictMode does in dev), which used to tick a set on and straight
+  // back off, and add two rows per "Add Set".
+  const changeSets = (exIndex, fn) =>
+    setExercises((prev) => prev.map((ex, i) => (i === exIndex ? { ...ex, sets: fn(ex.sets) } : ex)));
 
-  const updateSet = (exIndex, setIndex, field, value) => {
-    setExercises((prev) => {
-      const next = [...prev];
-      next[exIndex].sets[setIndex][field] = value;
-      return next;
-    });
-  };
+  const addSet = (exIndex) => changeSets(exIndex, (sets) => {
+    const lastSet = sets[sets.length - 1];
+    return [...sets, {
+      reps:      lastSet ? String(lastSet.reps) : "",
+      weight_kg: lastSet ? String(lastSet.weight_kg) : "",
+      rpe:       "",
+      done:      false,
+      isWarmup:  false,
+    }];
+  });
 
+  const updateSet = (exIndex, setIndex, field, value) =>
+    changeSets(exIndex, (sets) => sets.map((s, j) => (j === setIndex ? { ...s, [field]: value } : s)));
+
+  // Side effects (PR save, celebration, rest timer) run once here in the
+  // handler, never inside a state updater.
   const toggleSetDone = (exIndex, setIndex) => {
-    setExercises((prev) => {
-      const next  = [...prev];
-      const set   = next[exIndex].sets[setIndex];
-      set.done    = !set.done;
-      if (set.done && !set.isWarmup) {
-        const weight = parseFloat(set.weight_kg) || 0;
-        const reps   = parseInt(set.reps) || 0;
-        if (weight > 0 && savePR(next[exIndex].name, weight, reps)) {
-          next[exIndex].newPR = { weight_kg: weight, reps };
-          setCelebration({ exercise: next[exIndex].name, weight, reps });
-          setTimeout(() => setCelebration(null), 2500);
-        }
-        setRestActive(true);
-        setRestTimer(90);
+    const ex   = exercises[exIndex];
+    const set  = ex.sets[setIndex];
+    const done = !set.done;
+    if (done && !set.isWarmup) {
+      const weight = parseFloat(set.weight_kg) || 0;
+      const reps   = parseInt(set.reps) || 0;
+      if (weight > 0 && savePR(ex.name, weight, reps)) {
+        const newPR = { weight_kg: weight, reps };
+        setExercises((prev) => prev.map((e, i) => (i === exIndex ? { ...e, newPR } : e)));
+        setCelebration({ exercise: ex.name, weight, reps });
+        setTimeout(() => setCelebration(null), 2500);
       }
-      return next;
-    });
+      setRestActive(true);
+      setRestTimer(90);
+    }
+    updateSet(exIndex, setIndex, "done", done);
   };
 
   const removeExercise = (exIndex) => setExercises((prev) => prev.filter((_, i) => i !== exIndex));
@@ -473,8 +473,9 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   // Persist to localStorage (offline cache) + backend (cross-device sync,
   // analytics, AI coach). The set breakdown rides along in `details.exercises`.
   const persistWorkout = (workout) => {
-    saveWorkoutToHistory(workout);
+    // A session with no completed sets isn't a workout; don't count it.
     if (workout.exercises.length === 0) return;
+    saveWorkoutToHistory(workout);
 
     const totalVolume = workout.exercises.reduce(
       (s, e) => s + e.sets.reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0), 0

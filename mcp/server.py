@@ -394,7 +394,7 @@ async def list_tools() -> list[Tool]:
                     "user_email": {"type": "string"},
                     "category": {
                         "type": "string",
-                        "enum": ["protein", "carbs", "veggies", "dairy", "spices", "fats", "other"],
+                        "enum": ["protein", "produce", "grains", "dairy", "pantry", "other"],
                         "description": "Optional category filter",
                     },
                 },
@@ -406,7 +406,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Add a food item to the user's home inventory. "
                 "unit should be one of: g, kg, pieces, tbsp, cups, L, ml, cans. "
-                "category should be one of: protein, carbs, veggies, dairy, spices, fats, other."
+                "category should be one of: protein, produce, grains, dairy, pantry, other."
             ),
             inputSchema={
                 "type": "object",
@@ -420,7 +420,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "category": {
                         "type": "string",
-                        "enum": ["protein", "carbs", "veggies", "dairy", "spices", "fats", "other"],
+                        "enum": ["protein", "produce", "grains", "dairy", "pantry", "other"],
                     },
                 },
                 "required": ["user_email", "name", "quantity", "unit", "category"],

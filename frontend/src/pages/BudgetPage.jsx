@@ -34,7 +34,7 @@ function groupByDate(entries) {
   return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
 }
 
-function DonutChart({ data, active, onSelect }) {
+function DonutChart({ data, active, onSelect, cur }) {
   const total = Object.values(data).reduce((s, v) => s + v, 0) || 1;
   const size = 120;
   const cx = size / 2;
@@ -83,7 +83,7 @@ function DonutChart({ data, active, onSelect }) {
         return s ? (
           <>
             <text x={cx} y={cy - 5} textAnchor="middle" fill={cat.color} fontSize="13" fontWeight="700" fontFamily={T.fontMono}>
-              CHF {(s.val).toFixed(0)}
+              {cur} {(s.val).toFixed(0)}
             </text>
             <text x={cx} y={cy + 10} textAnchor="middle" fill={T.textMuted} fontSize="9" fontFamily={T.fontFamily}>
               {(s.pct * 100).toFixed(0)}%
@@ -159,7 +159,7 @@ function WeekBarsChart({ bars, avg }) {
 }
 
 // Unified add sheet — toggle between Expense and Income at the top
-function AddEntrySheet({ onClose, onAdded }) {
+function AddEntrySheet({ onClose, onAdded, cur }) {
   const [entryType, setEntryType] = useState("expense");
   const isIncome = entryType === "income";
   const cats = isIncome ? INCOME_CATS : EXPENSE_CATS;
@@ -187,6 +187,7 @@ function AddEntrySheet({ onClose, onAdded }) {
       });
       onAdded();
       onClose();
+      showToast(isIncome ? "Income added" : "Expense added", "success");
     } catch (e) { showToast(e?.message || "Failed to save", "error"); }
     setSaving(false);
   }
@@ -196,7 +197,7 @@ function AddEntrySheet({ onClose, onAdded }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(2px)" }} />
-      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: "16px 20px 44px", border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "88vh", overflowY: "auto" }}>
+      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "88vh", overflowY: "auto" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, margin: "0 auto 16px" }} />
 
         {/* Type toggle */}
@@ -212,7 +213,7 @@ function AddEntrySheet({ onClose, onAdded }) {
 
         {/* Amount — big centered input */}
         <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Amount (CHF)</div>
+          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Amount ({cur})</div>
           <input type="number" step="0.05" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus
             style={{ width: "100%", background: T.elevated, border: `2px solid ${amount ? accentColor + "88" : T.border}`, borderRadius: 14, padding: "14px 0", fontSize: 32, fontWeight: 800, color: accentColor, fontFamily: T.fontMono, outline: "none", textAlign: "center", boxSizing: "border-box", transition: "border-color 0.15s" }} />
         </div>
@@ -252,6 +253,7 @@ function AddEntrySheet({ onClose, onAdded }) {
 }
 
 export default function BudgetPage({ profile, onProfile }) {
+  const cur = profile?.preferred_currency || "CHF";
   const [entries, setEntries] = useState([]);
   const [activeDonut, setActiveDonut] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -312,14 +314,14 @@ export default function BudgetPage({ profile, onProfile }) {
         <div style={{ margin: "0 20px 14px", background: balance >= 0 ? `linear-gradient(135deg,${T.teal}18,${T.surface})` : `linear-gradient(135deg,${T.negative}18,${T.surface})`, border: `1px solid ${balance >= 0 ? T.teal + "33" : T.negative + "33"}`, borderRadius: T.rCard, padding: "20px 18px" }}>
           <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 }}>Balance this month</div>
           <div style={{ fontSize: 36, fontWeight: 800, fontFamily: T.fontMono, color: balance >= 0 ? T.teal : T.negative, letterSpacing: -1, lineHeight: 1, marginBottom: 4 }}>
-            {balance >= 0 ? "+" : ""}CHF {Math.abs(balance).toFixed(2)}
+            {balance >= 0 ? "+" : "−"}{cur} {Math.abs(balance).toFixed(2)}
           </div>
           {savingsPct > 0 && <div style={{ fontSize: 11, color: T.textMuted }}>{savingsPct}% saved this month</div>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 14 }}>
             {[
-              { label: "Income", value: `CHF ${totalIncome.toFixed(0)}`, color: T.teal },
-              { label: "Spent", value: `CHF ${totalExpenses.toFixed(0)}`, color: T.negative },
-              { label: "Saved", value: `CHF ${Math.max(0, balance).toFixed(0)}`, color: "#5C8FFC" },
+              { label: "Income", value: `${cur} ${totalIncome.toFixed(0)}`, color: T.teal },
+              { label: "Spent", value: `${cur} ${totalExpenses.toFixed(0)}`, color: T.negative },
+              { label: "Saved", value: `${cur} ${Math.max(0, balance).toFixed(0)}`, color: "#5C8FFC" },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
@@ -333,7 +335,7 @@ export default function BudgetPage({ profile, onProfile }) {
         <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "16px 18px" }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 14 }}>Spending by Category</div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <DonutChart data={catData} active={activeDonut} onSelect={setActiveDonut} />
+            <DonutChart data={catData} active={activeDonut} onSelect={setActiveDonut} cur={cur} />
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
               {EXPENSE_CATS.map(cat => {
                 const val = catData[cat.id] || 0;
@@ -368,7 +370,7 @@ export default function BudgetPage({ profile, onProfile }) {
                     <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{cat.label}</span>
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: over ? T.negative : T.text, fontFamily: T.fontMono, marginBottom: 2 }}>
-                    CHF {spent.toFixed(0)} <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 400 }}>/ {budget}</span>
+                    {cur} {spent.toFixed(0)} <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 400 }}>/ {budget}</span>
                   </div>
                   <div style={{ height: 4, borderRadius: 9999, background: T.elevated2, overflow: "hidden", marginTop: 6 }}>
                     <div style={{ width: `${pct * 100}%`, height: "100%", background: over ? T.negative : cat.color, borderRadius: 9999 }} />
@@ -401,12 +403,13 @@ export default function BudgetPage({ profile, onProfile }) {
             <EmptyState icon="budget" title="No transactions" subtitle="Tap + to log your first expense" />
           )}
           {grouped.map(([date, items]) => {
-            const dayTotal = items.reduce((s, e) => s + e.amount, 0);
+            // Money spent that day; income is not spending.
+            const dayTotal = items.filter(e => !isIncomeEntry(e)).reduce((s, e) => s + e.amount, 0);
             return (
               <div key={date} style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.3 }}>{fmtDate(date)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>CHF {dayTotal.toFixed(2)}</span>
+                  {dayTotal > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {dayTotal.toFixed(2)} spent</span>}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {items.map(e => {
@@ -420,7 +423,7 @@ export default function BudgetPage({ profile, onProfile }) {
                           <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.description || cat.label}</div>
                           <div style={{ fontSize: 10, color: cat.color, background: cat.color + "18", borderRadius: 5, padding: "1px 6px", display: "inline-block", marginTop: 3, fontWeight: 600 }}>{cat.label}</div>
                         </div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>CHF {e.amount.toFixed(2)}</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {e.amount.toFixed(2)}</div>
                       </div>
                     );
                   })}
@@ -432,9 +435,10 @@ export default function BudgetPage({ profile, onProfile }) {
       </PageScroll>
 
       <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} />
-      {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} />}
+      {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} />}
       {selectedCategory && (
         <CategoryDetailPage
+          currency={cur}
           category={selectedCategory}
           entries={expenseEntries.filter((e) => e.category === selectedCategory.id)}
           onBack={() => setSelectedCategory(null)}

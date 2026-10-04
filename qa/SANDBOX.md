@@ -24,7 +24,6 @@ Install dependencies while the sandbox still has internet (pip and npm need it);
    cp .env.example .env            # then set the variables listed below
    export DATABASE_URL_SYNC=...    # Alembic and the exercise seeder read it from the shell, not from .env
    alembic upgrade head
-   # apply the schema fix below, then:
    python seed_exercises.py
    uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
@@ -36,14 +35,7 @@ Install dependencies while the sandbox still has internet (pip and npm need it);
    ```
    Don't create a frontend `.env` file. With `VITE_API_URL` unset, the app calls the relative `/api/v1`, which the Vite dev server proxies to the backend. In dev mode the PWA service worker is enabled; if a stale bundle shows up, clear the site data.
 
-### Schema fix (required on a fresh database)
-
-Two columns exist in the backend models, but no Alembic migration creates them. On a database built only with `alembic upgrade head`, the Pantry tab can't load or save items, and the exercise search in the Workout tab returns nothing. Run this once, after `alembic upgrade head` and before `seed_exercises.py`:
-
-```sql
-ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
-ALTER TABLE exercises ADD COLUMN IF NOT EXISTS gif_url VARCHAR(255);
-```
+   **Whatever serves the page must forward `/api/*` to the backend on port 8000.** `npm run dev` does this. If you serve the built `dist/` folder from a plain file server instead, add that forwarding rule (`infra/Caddyfile.staging` is a minimal example); without it every request gets "405 Method Not Allowed" and sign-up shows "Request failed". Quick check: opening `/api/v1/health` on the app's address must return `{"status":"healthy"}`, not the app's page.
 
 ## Environment variables
 

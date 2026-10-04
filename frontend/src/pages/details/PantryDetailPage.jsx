@@ -73,7 +73,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
         subtitle={`${category} · ${location}`}
       />
 
-      <PageScroll padBottom={100}>
+      <PageScroll padBottom={`calc(${T.navHeight} + 100px)`}>
         {/* Hero card */}
         <div style={{ padding: "0 16px 16px" }}>
           <div style={{
@@ -185,7 +185,8 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
       </PageScroll>
 
       {/* Sticky actions */}
-      <div style={{ position: "absolute", left: 16, right: 16, bottom: 24, display: "flex", gap: 8, zIndex: 24 }}>
+      {/* Sits above the fixed tab bar, which would otherwise swallow taps. */}
+      <div style={{ position: "absolute", left: 16, right: 16, bottom: `calc(${T.navHeight} + 16px)`, display: "flex", gap: 8, zIndex: 24 }}>
         <button
           onClick={onDelete}
           style={{ flex: 1, height: 52, borderRadius: 14, background: T.elevated, border: `1px solid ${T.negative}55`, color: T.negative, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}

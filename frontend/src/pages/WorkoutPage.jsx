@@ -3,6 +3,7 @@ import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Chip, PageHeader, PageScroll, SectionHead, IllustratedEmptyState, SkeletonCard, Badge } from "../design/components";
 import { workoutAPI, aiAPI } from "../utils/api";
+import { mergeWorkoutHistory } from "../utils/workouts";
 import { showToast } from "../utils/toast";
 import ExerciseBrowser from "../components/workout/ExerciseBrowser";
 import ActiveWorkout from "../components/workout/ActiveWorkout";
@@ -60,6 +61,16 @@ const PUSH_MUSCLES = new Set(["chest", "shoulders", "arms"]);
 const PULL_MUSCLES = new Set(["back"]);
 const LEG_MUSCLES  = new Set(["legs"]);
 
+// Whole days between a logged date and today, both in local time. Parsing
+// "2026-10-05" with new Date() gives UTC midnight, which read as "-1d ago"
+// shortly after local midnight east of UTC.
+function daysAgo(raw) {
+  const d = new Date(String(raw).slice(0, 10) + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((today - d) / 86400000);
+}
+
 function getMuscleFromExerciseName(name) {
   const ex = exerciseData.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
   return ex?.primary || null;
@@ -86,9 +97,7 @@ function analyzeWorkoutHistory(history) {
   // Suggest next using PPL cycle
   const nextGroup = lastGroup === "Push" ? "Pull" : lastGroup === "Pull" ? "Legs" : "Push";
 
-  // Days since last workout
-  const lastDate = new Date(lastWorkout.date || lastWorkout.loggedAt);
-  const daysSince = Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24));
+  const daysSince = daysAgo(lastWorkout.date || lastWorkout.loggedAt);
 
   return { lastGroup, nextGroup, daysSince, lastWorkout };
 }
@@ -99,9 +108,8 @@ function getMuscleRecency(history) {
   for (const w of sorted) {
     for (const ex of w.exercises || []) {
       const m = getMuscleFromExerciseName(ex.name);
-      if (m && !recency[m]) {
-        const date = new Date(w.date || w.loggedAt);
-        recency[m] = Math.floor((Date.now() - date) / (1000 * 60 * 60 * 24));
+      if (m && recency[m] == null) {
+        recency[m] = daysAgo(w.date || w.loggedAt);
       }
     }
   }
@@ -125,10 +133,12 @@ function HeroCard({ onStart, onBrowse, workoutInsight, aiSuggestion, aiThinking 
 
   const ai = aiSuggestion;
   const isRest = ai?.is_rest_day;
-  const title = ai ? (isRest ? "Rest Day" : ai.template_name) : `${nextGroup} Day`;
+  // With no history there is nothing to base a split on; Quick Start opens an
+  // empty session, so don't promise a "Push Day" that won't appear.
+  const title = ai ? (isRest ? "Rest Day" : ai.template_name) : insight ? `${nextGroup} Day` : "Start a workout";
   const subtitle = ai
     ? ai.reason
-    : `${info.description} · ${info.muscles.join(", ")}`;
+    : insight ? `${info.description} · ${info.muscles.join(", ")}` : "Add exercises as you go, or create a template with the + button.";
   const tag = ai ? (isRest ? "AI Coach · Recovery" : `AI Pick · ${ai.focus || "Today"}`) : insight ? "Suggested next" : "Quick start";
 
   return (
@@ -572,17 +582,8 @@ export default function WorkoutPage({ profile, onProfile }) {
     try {
       const [logs, tmpl] = await Promise.all([workoutAPI.getAll(30), workoutAPI.getTemplates()]);
       const localHistory = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
-      const apiLogs      = logs?.workouts || [];
-      // Live sessions are saved both locally and to the API — drop local copies
-      // that already exist server-side (same day, notes lead with the session name)
-      const localOnly = localHistory.filter((l) => {
-        const lDate = (l.date || l.loggedAt || "").slice(0, 10);
-        return !apiLogs.some((a) =>
-          (a.date || "").slice(0, 10) === lDate &&
-          (a.notes || "").startsWith(l.name || "")
-        );
-      });
-      const merged = [...apiLogs, ...localOnly].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
+      const merged = mergeWorkoutHistory(logs?.workouts || [], localHistory)
+        .sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
       setHistory(merged.slice(0, 50));
 
       // Merge API templates + local custom templates

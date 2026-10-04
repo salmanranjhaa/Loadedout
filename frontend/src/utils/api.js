@@ -111,6 +111,17 @@ export function isLoggedIn() {
   return !!getToken();
 }
 
+// FastAPI rejects bad fields with a list like
+// [{ loc: ["body", "password"], msg: "String should have at least 8 characters" }].
+// Turn the first entry into a sentence a person can act on:
+// "Password should have at least 8 characters".
+export function fieldErrorMessage({ loc = [], msg }) {
+  if (msg.startsWith("Value error, ")) return msg.slice("Value error, ".length);
+  const name = String(loc[loc.length - 1] ?? "value").replace(/_g$/, "").replace(/_/g, " ");
+  const field = name.charAt(0).toUpperCase() + name.slice(1);
+  return /^(String|Input|Value) /.test(msg) ? msg.replace(/^\w+/, field) : `${field}: ${msg}`;
+}
+
 async function request(path, options = {}, _retried = false) {
   const token = getToken();
   const headers = {
@@ -146,7 +157,9 @@ async function request(path, options = {}, _retried = false) {
         // refreshed === null: network hiccup; fall through and report the error
       }
       const error = await response.json().catch(() => ({ detail: "Request failed" }));
-      const detail = typeof error.detail === "string" ? error.detail : error.message || `HTTP ${response.status}`;
+      const detail = typeof error.detail === "string" ? error.detail
+        : Array.isArray(error.detail) && error.detail[0]?.msg ? fieldErrorMessage(error.detail[0])
+        : error.message || `HTTP ${response.status}`;
       const err = new Error(detail);
       err.status = response.status;
       throw err;

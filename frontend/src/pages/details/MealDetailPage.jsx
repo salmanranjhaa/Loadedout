@@ -2,6 +2,7 @@ import { useState } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Card, DetailHeader, PageScroll, MacroBar, MacroRing } from "../../design/components";
+import { showToast } from "../../utils/toast";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_TYPE_COLORS = { breakfast: T.amber, lunch: T.teal, dinner: T.violet, snack: T.textMuted, default: T.textMuted };
@@ -68,6 +69,10 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
 
   async function handleSave() {
     if (!onUpdate) return;
+    if ([eCal, eP, eC, eF].some((v) => parseFloat(v) < 0)) {
+      showToast("Calories and macros can't be negative", "error");
+      return;
+    }
     setSaving(true);
     try {
       await onUpdate({
@@ -134,7 +139,7 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
         }
       />
 
-      <PageScroll padBottom={120}>
+      <PageScroll padBottom={`calc(${T.navHeight} + 120px)`}>
         {/* Meal type pill */}
         <div style={{ padding: "0 16px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -259,7 +264,7 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
 
       {/* Sticky actions (view mode only) */}
       {!editing && (
-        <div style={{ position: "absolute", left: 16, right: 16, bottom: 24, display: "flex", gap: 8, zIndex: 24 }}>
+        <div style={{ position: "absolute", left: 16, right: 16, bottom: `calc(${T.navHeight} + 16px)`, display: "flex", gap: 8, zIndex: 24 }}>
           <button
             onClick={onDelete}
             style={{

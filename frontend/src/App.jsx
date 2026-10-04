@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, Suspense, lazy } from "react";
-import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { isLoggedIn, clearToken, userAPI } from "./utils/api";
 import { initOfflineSync } from "./utils/offline";
 import { T, domainColor } from "./design/tokens";
@@ -99,6 +99,7 @@ function PageFallback() {
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const accent = domainColor(location.pathname);
   const [loggedIn, setLoggedIn]         = useState(isLoggedIn());
   const [profile, setProfile]           = useState(null);
@@ -167,6 +168,11 @@ export default function App() {
   function handleLogout() {
     clearToken();
     setProfile(null);
+    // The next sign-in should start fresh on Schedule, not reopen the
+    // settings panel on whatever tab was showing.
+    setShowProfile(false);
+    setShowFullProfile(false);
+    navigate("/schedule", { replace: true });
     setLoggedIn(false);
   }
 

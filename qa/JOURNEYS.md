@@ -52,7 +52,7 @@ Steps:
 9. Under Recent Workouts, open the Push Day entry, read it, and close it.
 10. Close the app and open it again, then go back to the Workout tab.
 Must hold:
-- Saving the template with no exercises shows "Add at least one exercise" and no template is created.
+- Saving the template with no exercises keeps the form open and creates no template (a short "Add at least one exercise" message may flash at the top).
 - The Push Day card shows "2 exercises", and Start opens a session titled "Push Day" with both exercises listed and a running timer.
 - After a set is ticked, a "Rest" countdown appears at the top of the session.
 - The summary shows "Sets 3", "Exercises 2" and a volume of 1,040 kg (60×8 + 60×6 + 20×10), and celebrates 2 new personal records.
@@ -70,16 +70,16 @@ Steps:
 4. Change the amount to 200, read the preview, and tap Add to Meal.
 5. Tap the Chicken Breast entry, tap the pencil at the top right, change Calories (kcal) to -100 and tap Save changes.
 6. Tap the pencil again, change Calories (kcal) to 300, tap Save changes, then go back to Meals.
-7. Tap the bin icon on the Banana entry.
+7. Tap the bin icon on the Banana entry and confirm the deletion.
 8. Close the app and open it again, then go back to the Meals tab.
 Must hold:
 - Before anything is logged, each group says "Nothing logged yet" and the ring shows 0.
-- The message "Banana logged" appears, and Breakfast shows 89 kcal and "1 item".
+- Breakfast lists the banana with its amount ("Banana (100 g)"), 89 kcal and "1 item".
 - With 0 g, Add to Meal can't be used. With 200 g, the preview shows 330 kcal and 62g of protein.
 - With the banana and the chicken logged, the ring shows 419 and the header says "419 kcal".
 - A negative calorie value is refused with a clear message, and the ring never shows a total below zero.
 - After changing the chicken to 300 kcal, Lunch shows 300 kcal and the ring shows 389.
-- After the banana is deleted, Breakfast says "Nothing logged yet" again and the ring shows 300.
+- Deleting the banana asks for confirmation first. Afterwards, Breakfast says "Nothing logged yet" again and the ring shows 300.
 - After reopening the app, Lunch still shows Chicken Breast with 300 kcal and the ring still shows 300.
 
 ## J4: Stock the pantry after shopping
@@ -92,7 +92,7 @@ Steps:
 4. Add Rice with 1 kg in Grains, and Greek Yogurt with 2 pieces in Dairy, the same way.
 5. Tap the Grains filter, then tap All.
 6. Open Eggs, tap the minus button twice, then go back.
-7. Open Greek Yogurt and tap Remove from Pantry.
+7. Open Greek Yogurt, tap Remove from Pantry and confirm.
 8. Go to another tab and back to Pantry. Then close the app, open it again and return to Pantry.
 Must hold:
 - The empty Pantry says "Nothing here" and "Tap + to add what's in your kitchen".
@@ -133,9 +133,9 @@ Steps:
 3. In "New event", leave the title empty and try to tap Save event.
 4. Type Lunch: chicken and rice as the title, choose Meal, set Start to 12:30 and End to 13:00, type Home as the Location and tap Save event.
 5. Add Dinner: salmon and potatoes as a Meal from 19:00 to 19:45.
-6. Add Evening walk with Start 18:00 and End 17:00, and tap Save event.
+6. Add Evening walk with Start 18:00 and End 17:00, and try to tap Save event. Then tap Cancel.
 7. On the lunch event, tap the pencil, change End to 13:15 and tap Save event.
-8. On the dinner event, tap the bin icon.
+8. On the dinner event, tap the bin icon and confirm the deletion.
 9. Tap THU, then WED again.
 10. Close the app and open it again, go to Schedule and tap WED.
 Must hold:

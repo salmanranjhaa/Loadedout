@@ -22,7 +22,7 @@ function DailyBars({ days, color }) {
   );
 }
 
-export default function CategoryDetailPage({ category = {}, entries = [], onBack }) {
+export default function CategoryDetailPage({ category = {}, entries = [], onBack, currency: cur = "CHF" }) {
   const {
     label,
     name = label || "Category",
@@ -63,7 +63,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
         subtitle={`${txCount} transaction${txCount !== 1 ? "s" : ""} this month`}
       />
 
-      <PageScroll padBottom={40}>
+      <PageScroll padBottom={`calc(${T.navHeight} + 24px)`}>
         {/* Hero stats */}
         <div style={{ padding: "0 16px 16px" }}>
           <div style={{
@@ -80,7 +80,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
                   {name} · {monthLabel}
                 </div>
                 <div style={{ fontSize: 30, fontWeight: 800, color: T.text, letterSpacing: -1, fontFamily: T.fontMono, marginTop: 2 }}>
-                  CHF {spent.toFixed(0)}
+                  {cur} {spent.toFixed(0)}
                   {budget > 0 && (
                     <span style={{ fontSize: 14, fontWeight: 500, color: T.textMuted, letterSpacing: 0 }}> / {budget}</span>
                   )}
@@ -100,8 +100,8 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 12, color: T.textMuted }}>
                     {over
-                      ? <span style={{ color: T.negative, fontWeight: 600 }}>CHF {Math.abs(remaining).toFixed(0)} over budget</span>
-                      : <span>CHF {remaining.toFixed(0)} remaining</span>
+                      ? <span style={{ color: T.negative, fontWeight: 600 }}>{cur} {Math.abs(remaining).toFixed(0)} over budget</span>
+                      : <span>{cur} {remaining.toFixed(0)} remaining</span>
                     }
                   </div>
                   <div style={{ fontSize: 12, fontFamily: T.fontMono, color: over ? T.negative : color, fontWeight: 600 }}>
@@ -116,9 +116,9 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
         {/* Stat row */}
         <div style={{ padding: "0 16px 20px", display: "flex", gap: 8 }}>
           {[
-            { label: "Total", value: `CHF ${spent.toFixed(0)}` },
+            { label: "Total", value: `${cur} ${spent.toFixed(0)}` },
             { label: "Transactions", value: txCount },
-            { label: "Avg / tx", value: `CHF ${avgTx.toFixed(0)}` },
+            { label: "Avg / tx", value: `${cur} ${avgTx.toFixed(0)}` },
           ].map(({ label: l, value }) => (
             <div key={l} style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 12px", textAlign: "center" }}>
               <div style={{ fontSize: 16, fontWeight: 700, fontFamily: T.fontMono, color: T.text }}>{value}</div>
@@ -137,7 +137,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
               <DailyBars days={days} color={color} />
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
                 <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>1st</span>
-                <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>{daysInMonth}th</span>
+                <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.fontMono }}>{daysInMonth}{daysInMonth === 31 ? "st" : "th"}</span>
               </div>
             </Card>
           </div>
@@ -161,7 +161,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
                     <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{(tx.date || "").slice(0, 10)}</div>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 700, fontFamily: T.fontMono, color: T.text }}>
-                    -CHF {(tx.amount || 0).toFixed(2)}
+                    -{cur} {(tx.amount || 0).toFixed(2)}
                   </div>
                 </div>
               </Card>
