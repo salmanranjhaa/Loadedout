@@ -98,6 +98,8 @@ function DayNav({ selectedDate, onNav }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 16px 10px" }}>
       <button
+        aria-label="Previous day"
+        title="Previous day"
         onClick={() => onNav(-1)}
         style={{
           width: 32,
@@ -136,6 +138,8 @@ function DayNav({ selectedDate, onNav }) {
         )}
       </div>
       <button
+        aria-label="Next day"
+        title="Next day"
         onClick={() => !isFuture && onNav(1)}
         style={{
           width: 32,
@@ -233,6 +237,8 @@ function MealRow({ meal, onDelete, deleting, onClick }) {
         <div style={{ fontSize: 9, color: T.textDim }}>kcal</div>
       </div>
       <button
+        aria-label={`Delete ${meal.name}`}
+        title="Delete"
         onClick={(e) => {
           e.stopPropagation();
           if (window.confirm(`Delete ${meal.name}?`)) onDelete(meal.id);
@@ -483,6 +489,7 @@ export default function MealsPage({ profile, onProfile }) {
     try {
       await mealsAPI.updateLog(id, payload);
       setSelectedMeal((prev) => prev ? { ...prev, ...payload } : prev);
+      showToast("Changes saved", "success");
       refresh();
     } catch (err) {
       showToast(err.message || "Couldn't update meal", "error");

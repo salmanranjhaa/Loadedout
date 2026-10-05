@@ -295,6 +295,8 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
         flexShrink: 0,
       }}>
         <button
+          aria-label="Back"
+          title="Back"
           onClick={onClose}
           style={{
             width: 34, height: 34, borderRadius: 9999,
@@ -350,6 +352,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
         <SettingsGroup title="Body metrics">
           <SettingsRow label="Height" value={fmt(p.height_cm, " cm")} />
           <SettingsRow label="Current weight" value={fmt(p.current_weight_kg, " kg")} />
+          <SettingsRow label="Age" value={fmt(p.age, " years")} />
           <SettingsRow label="Goal weight" value={fmt(p.target_weight_kg, " kg")} />
           <SettingsRow label="Biological sex" value={(p.gender || "—").replace(/_/g, " ")} />
           <SettingsRow label="Activity level" value={(p.activity_level || "—").replace(/_/g, " ")} last />
@@ -398,27 +401,6 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
           <SettingsRow label="Currency" value={p.preferred_currency || "CHF"} />
           <SettingsRow label="Units" value="Metric" last />
         </SettingsGroup>
-
-        {/* Full settings CTA */}
-        <div style={{ padding: "4px 20px 8px" }}>
-          <button
-            onClick={onFullProfile}
-            style={{
-              width: "100%", padding: "13px",
-              background: `${T.teal}18`,
-              border: `1px solid ${T.teal}44`,
-              borderRadius: 14,
-              color: T.teal,
-              fontSize: 14, fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: T.fontFamily,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            <Icon name="analytics" size={16} color={T.teal} />
-            Full profile &amp; settings
-          </button>
-        </div>
 
         {/* Sign out */}
         <div style={{ padding: "8px 20px 32px" }}>

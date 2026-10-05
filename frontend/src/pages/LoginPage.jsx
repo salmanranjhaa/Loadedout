@@ -10,7 +10,7 @@ import {
 } from "../utils/api";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Card, Button, Input } from "../design/components";
+import { Card, Button, Input, Hint } from "../design/components";
 
 function getResetTokenFromUrl() {
   try {
@@ -405,6 +405,9 @@ export default function LoginPage({ onLogin }) {
                   : mode === "reset" ? "Set new password"
                   : "Sign in"}
               </Button>
+              {mode === "signup" && !canSubmit && (username || email || password || confirmPassword) && (
+                <Hint style={{ marginTop: 8 }}>Fill in all four fields to create your account.</Hint>
+              )}
             </div>
 
             {(mode === "forgot" || mode === "reset") && (

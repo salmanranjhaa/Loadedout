@@ -27,7 +27,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
     category = "Other",
     quantity = 0,
     unit = "",
-    location = "Fridge",
+    location = null, // only shown when the item actually has one
     expiry_date = null,
     notes = "",
     nutrition = null,
@@ -70,7 +70,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
       <DetailHeader
         onBack={onBack}
         title={name}
-        subtitle={`${category} · ${location}`}
+        subtitle={[category, location].filter(Boolean).join(" · ")}
       />
 
       <PageScroll padBottom={`calc(${T.navHeight} + 100px)`}>
@@ -89,8 +89,8 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
                 <div style={{ fontSize: 20, fontWeight: 700, color: T.text, letterSpacing: -0.4 }}>{name}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                   <span style={{ fontSize: 11, color: T.textMuted }}>{category}</span>
-                  <span style={{ fontSize: 9, color: T.textDim }}>·</span>
-                  <span style={{ fontSize: 11, color: locColor, fontWeight: 600 }}>{location}</span>
+                  {location && <span style={{ fontSize: 9, color: T.textDim }}>·</span>}
+                  {location && <span style={{ fontSize: 11, color: locColor, fontWeight: 600 }}>{location}</span>}
                   {daysLeft !== null && <ExpiryBadge daysLeft={daysLeft} />}
                 </div>
               </div>
@@ -102,6 +102,8 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
               <div style={{ flex: 1 }} />
               <div style={{ display: "flex", alignItems: "center", gap: 0, background: T.elevated, borderRadius: 10, border: `1px solid ${T.border}`, overflow: "hidden" }}>
                 <button
+                  aria-label="Decrease quantity"
+                  title="Decrease"
                   onClick={() => changeQty(-1)}
                   style={{ width: 36, height: 36, border: "none", background: "transparent", color: T.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
@@ -111,6 +113,8 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
                   {qty}
                 </div>
                 <button
+                  aria-label="Increase quantity"
+                  title="Increase"
                   onClick={() => changeQty(1)}
                   style={{ width: 36, height: 36, border: "none", background: "transparent", color: T.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
@@ -128,7 +132,7 @@ export default function PantryDetailPage({ item = {}, onBack, onDelete, onChange
             <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 12 }}>Details</div>
             {[
               { label: "Category", value: category, icon: "pantry" },
-              { label: "Storage", value: location, icon: "bolt" },
+              { label: "Storage", value: location || "Not set", icon: "bolt" },
               { label: "Expires", value: expiry_date || "No date set", icon: "calendar", highlight: daysLeft !== null && daysLeft <= 3 },
               { label: "Notes", value: notes || "None", icon: "edit" },
             ].map(({ label, value, icon, highlight }, i, arr) => (

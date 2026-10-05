@@ -174,6 +174,9 @@ export default function Onboarding({ profile, onComplete, onSkip }) {
             {aboutErrors.map((msg) => (
               <div key={msg} style={{ fontSize: 13, color: T.negative }}>{msg}</div>
             ))}
+            {!stepValid && aboutErrors.length === 0 && (
+              <div style={{ fontSize: 13, color: T.textMuted }}>Enter your weight, height and age to continue.</div>
+            )}
           </>
         )}
 

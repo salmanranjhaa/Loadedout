@@ -38,7 +38,9 @@ function TemplateCardSmall({ t, onStart }) {
     <div style={{ width: 220, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <Badge color={c} size="sm">{(t.workout_type || "strength").toUpperCase()}</Badge>
       <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{t.name}</div>
-      <div style={{ fontSize: 12, color: T.textMuted }}>{t.exercises?.length || 0} exercises · {t.duration || "—"}</div>
+      <div style={{ fontSize: 12, color: T.textMuted }}>
+        {t.exercises?.length || 0} exercise{t.exercises?.length === 1 ? "" : "s"}{t.estimated_duration ? ` · ${t.duration}` : ""}
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {(t.muscles || []).slice(0, 3).map((m) => (
           <span key={m} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 7px" }}>{m}</span>
@@ -238,12 +240,14 @@ function SpeedDialFAB({ onAILog, onManualLog, onNewTemplate }) {
       {open && actions.map((a, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `speedDialIn 0.15s ${i * 0.05}s both` }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: T.text, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, padding: "4px 10px", whiteSpace: "nowrap" }}>{a.label}</span>
-          <button onClick={() => { setOpen(false); a.handler(); }} style={{ width: 44, height: 44, borderRadius: 9999, background: a.color + "22", border: `1px solid ${a.color}44`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button aria-label={a.label} onClick={() => { setOpen(false); a.handler(); }} style={{ width: 44, height: 44, borderRadius: 9999, background: a.color + "22", border: `1px solid ${a.color}44`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name={a.icon} size={18} color={a.color} />
           </button>
         </div>
       ))}
       <button
+        aria-label={open ? "Close menu" : "Add workout or template"}
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         style={{ width: 56, height: 56, borderRadius: 9999, background: T.teal, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 24px ${T.teal}55`, transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s cubic-bezier(.34,1.56,.64,1)" }}
       >
@@ -295,7 +299,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>AI Workout Logger</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div>
@@ -399,7 +403,7 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Browse Templates</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
@@ -487,7 +491,7 @@ function NewTemplateModal({ onClose, onSaved }) {
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>New Template</div>
-            <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+            <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
           </div>
 
           {/* Name */}
@@ -521,7 +525,7 @@ function NewTemplateModal({ onClose, onSaved }) {
                   <div key={i} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 24, height: 24, borderRadius: 7, background: T.teal + "22", display: "flex", alignItems: "center", justifyContent: "center", color: T.teal, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{ex.name}</div>
-                    <button onClick={() => removeExercise(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: T.negative }}>
+                    <button aria-label={`Remove ${ex.name}`} onClick={() => removeExercise(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: T.negative }}>
                       <Icon name="trash" size={14} color={T.negative} />
                     </button>
                   </div>

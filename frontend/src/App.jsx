@@ -167,6 +167,13 @@ export default function App() {
 
   function handleLogout() {
     clearToken();
+    // These browser-only caches belong to the person signing out; on a shared
+    // device the next account used to see their workouts, records and setup
+    // state (and skip its own onboarding).
+    ["lo_workout_history", "lo_prs", "lo_custom_templates", "lo_wk_suggestion_v1", "lo_onboarded"]
+      .forEach((k) => localStorage.removeItem(k));
+    Object.keys(localStorage).filter((k) => k.startsWith("lo_supps_")).forEach((k) => localStorage.removeItem(k));
+    setOnboardingDone(false);
     setProfile(null);
     // The next sign-in should start fresh on Schedule, not reopen the
     // settings panel on whatever tab was showing.

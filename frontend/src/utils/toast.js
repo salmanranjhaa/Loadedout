@@ -39,5 +39,5 @@ export function showToast(message, type = "info") {
     toast.style.opacity = "0";
     toast.style.transition = "opacity 0.3s";
     setTimeout(() => toast.remove(), 300);
-  }, type === "error" ? 4500 : 2500);
+  }, type === "error" ? 6000 : 4000); // long enough for a careful reader to catch
 }

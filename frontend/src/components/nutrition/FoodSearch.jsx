@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
-import { Badge } from "../../design/components";
+import { Badge, Hint } from "../../design/components";
 import { mealsAPI, aiAPI, foodAPI, isNativePlatform } from "../../utils/api";
 import { showToast } from "../../utils/toast";
 import { pickImage, decodeBarcodeFromImage, startLiveBarcodeScan, scanBarcodeNative } from "../../utils/camera";
@@ -153,6 +153,7 @@ function PortionSelector({ food, onAdd, onBack }) {
           Add to Meal
         </button>
       </div>
+      {!valid && <Hint>Enter an amount above 0 g.</Hint>}
     </div>
   );
 }
@@ -201,13 +202,14 @@ function DatabaseTab({ onSelect }) {
       return;
     }
     setOnlineLoading(true);
+    let stale = false; // ignore answers to searches the user has already moved past
     const handle = setTimeout(() => {
       foodAPI.search(q)
-        .then((data) => setOnlineResults(data?.items || []))
-        .catch(() => setOnlineResults([]))
-        .finally(() => setOnlineLoading(false));
+        .then((data) => { if (!stale) setOnlineResults(data?.items || []); })
+        .catch(() => { if (!stale) setOnlineResults([]); })
+        .finally(() => { if (!stale) setOnlineLoading(false); });
     }, 450);
-    return () => clearTimeout(handle);
+    return () => { stale = true; clearTimeout(handle); };
   }, [query]);
 
   if (selected) {

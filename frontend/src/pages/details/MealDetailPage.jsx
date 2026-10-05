@@ -126,6 +126,8 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
             </button>
           ) : (
             <button
+              aria-label="Edit meal"
+              title="Edit"
               onClick={() => setEditing(true)}
               style={{
                 width: 34, height: 34, borderRadius: 9999, background: T.elevated,
@@ -266,6 +268,8 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
       {!editing && (
         <div style={{ position: "absolute", left: 16, right: 16, bottom: `calc(${T.navHeight} + 16px)`, display: "flex", gap: 8, zIndex: 24 }}>
           <button
+            aria-label="Delete meal"
+            title="Delete"
             onClick={onDelete}
             style={{
               width: 52, height: 52, borderRadius: 14, background: T.elevated,

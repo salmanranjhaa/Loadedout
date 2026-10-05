@@ -3,7 +3,7 @@ import { T, catColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { showToast } from "../utils/toast";
 import {
-  PageHeader, PageScroll, Chip, Fab, LoadingDots, EmptyState,
+  PageHeader, PageScroll, Chip, Fab, LoadingDots, EmptyState, Hint,
 } from "../design/components";
 import {
   authAPI,
@@ -101,6 +101,8 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: T.text, letterSpacing: -0.3 }}>{modalTitle}</div>
           <button
+            aria-label="Close"
+            title="Close"
             onClick={onCancel}
             style={{
               background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999,
@@ -236,6 +238,7 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
             {saving ? "Saving…" : "Save event"}
           </button>
         </div>
+        {!form.title.trim() && <Hint>Add a title to save the event.</Hint>}
       </div>
     </div>
   );
@@ -289,12 +292,16 @@ function EventCard({ event, onEdit, onDelete }) {
         </div>
         <div style={{ display: "flex", gap: 1, flexShrink: 0, marginTop: -1 }}>
           <button
+            aria-label={`Edit ${event.title}`}
+            title="Edit"
             onClick={e => { e.stopPropagation(); onEdit(event); }}
             style={{ background: "none", border: "none", padding: "2px 3px", cursor: "pointer", color: T.textDim, borderRadius: 4 }}
           >
             <Icon name="edit" size={10} color={T.textDim} />
           </button>
           <button
+            aria-label={`Delete ${event.title}`}
+            title="Delete"
             onClick={e => { e.stopPropagation(); onDelete(event.id); }}
             style={{ background: "none", border: "none", padding: "2px 3px", cursor: "pointer", color: T.textDim, borderRadius: 4 }}
           >
@@ -423,6 +430,7 @@ export default function SchedulePage({ profile, onProfile }) {
       });
       setEvents(prev => [...prev, created].sort((a,b) => a.start_time.localeCompare(b.start_time)));
       setModal(null);
+      showToast("Event saved", "success");
     } catch (e) { showToast(e.message, "error"); }
     setSaving(false);
   }
@@ -445,6 +453,7 @@ export default function SchedulePage({ profile, onProfile }) {
           .sort((a,b) => a.start_time.localeCompare(b.start_time))
       );
       setModal(null);
+      showToast("Event updated", "success");
     } catch (e) { showToast(e.message, "error"); }
     setSaving(false);
   }
@@ -455,6 +464,7 @@ export default function SchedulePage({ profile, onProfile }) {
     try {
       await scheduleAPI.delete(eventId);
       setEvents(prev => prev.filter(e => e.id !== eventId));
+      showToast("Event deleted", "success");
     } catch (e) { showToast(e.message, "error"); }
   }
 
@@ -475,6 +485,8 @@ export default function SchedulePage({ profile, onProfile }) {
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             {/* Week nav */}
             <button
+              aria-label="Previous week"
+              title="Previous week"
               onClick={() => setWeekOffset(w => w - 1)}
               style={{
                 background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999,
@@ -485,6 +497,8 @@ export default function SchedulePage({ profile, onProfile }) {
               <Icon name="chev-left" size={13} />
             </button>
             <button
+              aria-label="Next week"
+              title="Next week"
               onClick={() => setWeekOffset(w => w + 1)}
               style={{
                 background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999,
@@ -666,6 +680,7 @@ export default function SchedulePage({ profile, onProfile }) {
 
       {/* FAB */}
       <Fab
+        label="Add event"
         onClick={() => setModal({ mode: "create" })}
         icon="plus"
         color={T.blue}

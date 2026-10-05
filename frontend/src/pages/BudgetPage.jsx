@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Card, Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots } from "../design/components";
+import { Card, Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots, Hint } from "../design/components";
 import { budgetAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import CategoryDetailPage from "./details/CategoryDetailPage";
@@ -247,6 +247,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
           style={{ width: "100%", padding: "14px 0", background: !amount || parseFloat(amount) <= 0 ? T.elevated : accentColor, color: !amount || parseFloat(amount) <= 0 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 13, fontSize: 15, fontWeight: 700, cursor: saving || !amount ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
           {saving ? "Saving…" : isIncome ? "Add Income" : "Add Expense"}
         </button>
+        {(!amount || parseFloat(amount) <= 0) && <Hint style={{ marginTop: 8 }}>Enter an amount above 0 to save.</Hint>}
       </div>
     </div>
   );
@@ -434,7 +435,7 @@ export default function BudgetPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} />
+      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} label="Add income or expense" />
       {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} />}
       {selectedCategory && (
         <CategoryDetailPage

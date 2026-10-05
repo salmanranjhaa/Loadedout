@@ -143,6 +143,9 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
 
       {/* Warmup toggle */}
       <button
+        aria-label={`Set ${setIndex + 1}: warm-up`}
+        aria-pressed={!!set.isWarmup}
+        title="Warm-up set"
         onClick={() => onToggleWarmup(exIndex, setIndex)}
         style={{
           height: 44, width: "100%", background: set.isWarmup ? `${T.amber}33` : T.elevated,
@@ -180,6 +183,9 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
 
       {/* Done button */}
       <button
+        aria-label={`Set ${setIndex + 1}: mark done`}
+        aria-pressed={!!set.done}
+        title="Mark set done"
         onClick={() => onToggleDone(exIndex, setIndex)}
         style={{
           height: 44, width: 40, borderRadius: 10,
@@ -259,7 +265,7 @@ function WorkoutSummary({ workout, onClose }) {
               return (
                 <div key={ex.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
                   <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 500 }}>{ex.name}</span>
-                  <span style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{ex.sets.length} sets{vol > 0 ? ` · ${Math.round(vol)}kg` : ""}</span>
+                  <span style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{ex.sets.length} set{ex.sets.length === 1 ? "" : "s"}{vol > 0 ? ` · ${Math.round(vol)}kg` : ""}</span>
                 </div>
               );
             })}
@@ -453,7 +459,9 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   const buildWorkout = (includeAll) => ({
     name:             template?.name || "Quick Workout",
     workout_type:     template?.workout_type || "strength",
-    duration_minutes: Math.floor(elapsed / 60),
+    // Same 1-minute floor the server applies, so the list doesn't read "0m"
+    // right after finishing and "1m" after a reload.
+    duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
     duration_seconds: elapsed,
     date:             localISODate(),
     exercises: exercises.map((ex) => ({
@@ -574,7 +582,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       {/* Header — paddingTop carries the top safe-area inset so the title/timer
           and the Finish button always clear the notch/status-bar zone. */}
       <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 12px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <button onClick={requestClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <button aria-label="Back" title="Back" onClick={requestClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} color={T.text} />
         </button>
         <div style={{ flex: 1, textAlign: "center" }}>
@@ -658,7 +666,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
                     )}
                   </div>
                 </div>
-                <button onClick={() => removeExercise(exIndex)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6 }}>
+                <button aria-label={`Remove ${ex.name}`} title="Remove exercise" onClick={() => removeExercise(exIndex)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6 }}>
                   <Icon name="trash" size={13} color={T.negative} />
                 </button>
               </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots } from "../design/components";
+import { Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots, Hint } from "../design/components";
 import { inventoryAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import PantryDetailPage from "./details/PantryDetailPage";
@@ -58,7 +58,7 @@ function AddItemSheet({ onClose, onAdded }) {
       <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `20px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Add Item</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: "none", borderRadius: 9999, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted }}>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: "none", borderRadius: 9999, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted }}>
             <Icon name="x" size={14} />
           </button>
         </div>
@@ -97,6 +97,7 @@ function AddItemSheet({ onClose, onAdded }) {
         <button onClick={handleSave} disabled={saving || !name.trim()} style={{ width: "100%", padding: "13px 0", background: T.orange, color: "#0A0A0F", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving || !name.trim() ? "not-allowed" : "pointer", opacity: saving || !name.trim() ? 0.5 : 1, fontFamily: "inherit" }}>
           {saving ? "Adding…" : "Add to Pantry"}
         </button>
+        {!name.trim() && <Hint style={{ marginTop: 8 }}>Enter an item name to add it.</Hint>}
       </div>
     </div>
   );
@@ -240,7 +241,7 @@ export default function InventoryPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} />
+      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} label="Add pantry item" />
       {showAdd && <AddItemSheet onClose={() => setShowAdd(false)} onAdded={reload} />}
       {selectedItem && (
         <PantryDetailPage
@@ -248,7 +249,6 @@ export default function InventoryPage({ profile, onProfile }) {
             ...selectedItem,
             category: getCatMeta(catOf(selectedItem)).label,
             expiry_days: selectedItem.expiry_days,
-            location: selectedItem.location || "Fridge",
           }}
           onBack={() => setSelectedItem(null)}
           onChanged={reload}
