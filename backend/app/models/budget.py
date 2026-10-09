@@ -3,6 +3,11 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 
+# Entries that are not spending: money coming in, and paying off the credit
+# card (moves cash to the card; the purchases were already counted).
+NON_SPENDING_CATEGORIES = {"income", "savings", "card_payment"}
+
+
 class BudgetEntry(Base):
     """I track daily expenses for budget monitoring and analytics."""
     __tablename__ = "budget_entries"

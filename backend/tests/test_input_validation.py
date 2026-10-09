@@ -44,6 +44,26 @@ def test_budget_payment_method_is_cash_or_card():
     assert _rejected(lambda: BudgetCreate(amount=10, category="food", payment_method="crypto"))
 
 
+def test_budget_amount_must_be_positive():
+    assert _rejected(lambda: BudgetCreate(amount=0, category="food"))
+    assert _rejected(lambda: BudgetCreate(amount=-5, category="food"))
+
+
+def test_card_to_pay_counts_card_purchases_minus_payments():
+    from types import SimpleNamespace as E
+    from app.api.routes_budget import card_outstanding
+    entries = [
+        E(amount=20.0, category="food", payment_method="card"),
+        E(amount=45.5, category="fun", payment_method="card"),
+        E(amount=64.8, category="food", payment_method="cash"),        # cash: not on the card
+        E(amount=1500.0, category="income", payment_method="card"),    # income never counts
+        E(amount=30.0, category="card_payment", payment_method="cash"),
+    ]
+    assert card_outstanding(entries) == 35.5          # 65.5 on the card, 30 paid
+    entries.append(E(amount=100.0, category="card_payment", payment_method="cash"))
+    assert card_outstanding(entries) == 0.0           # overpaid reads as nothing owed
+
+
 def test_event_must_end_after_it_starts():
     assert _rejected(lambda: _require_end_after_start(time(18, 0), time(17, 0)))
     assert _rejected(lambda: _require_end_after_start(time(12, 0), time(12, 0)))

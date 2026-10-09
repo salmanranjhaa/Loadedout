@@ -111,20 +111,21 @@ Steps:
 3. Tap the + button again. With Expense selected, leave the amount empty, then type 0, and try to tap Add Expense.
 4. Type 64.80 as the amount, choose Food, keep "Cash / debit" under Paid with, type Weekly groceries as the description and tap Add Expense.
 5. Add another Food expense of 15.20 paid with "Cash / debit", described as Bakery.
-6. Add a Food expense of 20 described as Takeaway, and choose "Credit card" under Paid with.
-7. Read the balance card, the Food tile and the Transactions list.
+6. Add a Food expense of 20 described as Takeaway, choose "Credit card" under Paid with, then read the balance card, the Food tile and the Transactions list.
+7. Tap the + button, choose "Card bill", keep the suggested amount and tap "Record card payment". Read the balance card again.
 8. Tap the Food tile, read the details, then go back.
 9. Tap the round profile button, tap Full settings, choose EUR under Currency, then go back to Budget.
 10. Close the app and open it again, then go back to the Budget tab.
 Must hold:
 - Add Expense can't be used while the amount is empty or 0, and the form says what's missing.
 - After the four entries, the balance card shows +CHF 1400.00, with Income CHF 1500, Spent CHF 100 and Saved CHF 1400.
-- The balance card also shows Cash balance +CHF 1420.00 and Card to pay CHF 20.00, because the takeaway went on the credit card.
+- Before the card is paid, the balance card also shows Cash balance +CHF 1420.00 and Card to pay CHF 20.00, because the takeaway went on the credit card.
 - The Food tile shows CHF 100 / 400.
-- The Food details show "CHF 300 remaining", 25%, "3 transactions this month", and the entries Weekly groceries (CHF 64.80), Bakery (CHF 15.20) and Takeaway (CHF 20.00).
 - The Transactions list under Today shows Monthly allowance, Weekly groceries, Bakery and Takeaway with their amounts, and Takeaway is marked "Credit card".
+- "Card bill" suggests 20.00. After the card payment, Card to pay shows CHF 0.00 and Cash balance +CHF 1400.00, while the balance (+CHF 1400.00), Spent (CHF 100) and the Food tile stay the same, and a "Card payment" of CHF 20.00 appears under Today.
+- The Food details show "CHF 300 remaining", 25%, "3 transactions this month", and the entries Weekly groceries (CHF 64.80), Bakery (CHF 15.20) and Takeaway (CHF 20.00).
 - After EUR is chosen in the settings, the Budget screen shows its amounts in EUR, not CHF.
-- After reopening the app, all four entries, the totals and the cash and card figures are unchanged.
+- After reopening the app, all entries, the totals and the cash and card figures are unchanged.
 
 ## J6: Plan the week's meals on the Schedule
 Actor: any

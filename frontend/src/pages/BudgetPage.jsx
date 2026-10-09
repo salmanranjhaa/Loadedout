@@ -20,7 +20,10 @@ const INCOME_CATS = [
   { id: "savings",   label: "Savings",   color: "#5C8FFC", icon: "shield"  },
 ];
 
-const CATS = [...EXPENSE_CATS, ...INCOME_CATS];
+// Paying off the credit card: moves cash to the card, not spending
+const CARD_PAYMENT = { id: "card_payment", label: "Card payment", color: T.violet, icon: "budget" };
+
+const CATS = [...EXPENSE_CATS, ...INCOME_CATS, CARD_PAYMENT];
 const CAT_BUDGETS = { food: 400, rent: 1200, transport: 150, fitness: 80, fun: 200, other: 150 };
 
 function getCat(id) { return CATS.find(c => c.id === id) || CATS[5]; }
@@ -158,10 +161,11 @@ function WeekBarsChart({ bars, avg }) {
   );
 }
 
-// Unified add sheet — toggle between Expense and Income at the top
-function AddEntrySheet({ onClose, onAdded, cur }) {
+// Unified add sheet — toggle between Expense, Income and Card bill at the top
+function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
   const [entryType, setEntryType] = useState("expense");
   const isIncome = entryType === "income";
+  const isPayment = entryType === "payment";
   const cats = isIncome ? INCOME_CATS : EXPENSE_CATS;
   const [cat, setCat] = useState("food");
   const [amount, setAmount] = useState("");
@@ -172,8 +176,10 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
 
   function switchType(t) {
     setEntryType(t);
-    setCat(t === "income" ? "income" : "food");
+    setCat(t === "income" ? "income" : t === "payment" ? CARD_PAYMENT.id : "food");
     setDesc(""); setAccount("");
+    // Paying the card usually clears what's owed; start from that amount
+    if (t === "payment" && cardToPay > 0) setAmount(cardToPay.toFixed(2));
   }
 
   async function handleSave() {
@@ -185,16 +191,16 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
         amount: parseFloat(amount),
         category: cat,
         description: parts.join(" ") || null,
-        payment_method: isIncome ? "cash" : paidWith,
+        payment_method: entryType === "expense" ? paidWith : "cash",
       });
       onAdded();
       onClose();
-      showToast(isIncome ? "Income added" : "Expense added", "success");
+      showToast(isIncome ? "Income added" : isPayment ? "Card payment recorded" : "Expense added", "success");
     } catch (e) { showToast(e?.message || "Failed to save", "error"); }
     setSaving(false);
   }
 
-  const accentColor = isIncome ? T.green : T.amber;
+  const accentColor = isIncome ? T.green : isPayment ? T.violet : T.amber;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
@@ -204,7 +210,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
 
         {/* Type toggle */}
         <div style={{ display: "flex", background: T.elevated, borderRadius: 12, padding: 4, marginBottom: 18, gap: 4 }}>
-          {[{ id: "expense", label: "Expense", icon: "budget", color: T.amber }, { id: "income", label: "Income", icon: "trend-up", color: T.teal }].map(opt => (
+          {[{ id: "expense", label: "Expense", icon: "budget", color: T.amber }, { id: "income", label: "Income", icon: "trend-up", color: T.teal }, { id: "payment", label: "Card bill", icon: "shield", color: T.violet }].map(opt => (
             <button key={opt.id} onClick={() => switchType(opt.id)}
               style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 9, background: entryType === opt.id ? opt.color : "transparent", border: "none", color: entryType === opt.id ? "#0A0A0F" : T.textMuted, fontSize: 13, fontWeight: entryType === opt.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
               <Icon name={opt.icon} size={14} color={entryType === opt.id ? "#0A0A0F" : T.textDim} />
@@ -220,25 +226,34 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
             style={{ width: "100%", background: T.elevated, border: `2px solid ${amount ? accentColor + "88" : T.border}`, borderRadius: 14, padding: "14px 0", fontSize: 32, fontWeight: 800, color: accentColor, fontFamily: T.fontMono, outline: "none", textAlign: "center", boxSizing: "border-box", transition: "border-color 0.15s" }} />
         </div>
 
-        {/* Category */}
-        <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Category</div>
-        <div style={{ display: "grid", gridTemplateColumns: isIncome ? "1fr 1fr" : "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
-          {cats.map(c => (
-            <button key={c.id} onClick={() => setCat(c.id)}
-              style={{ padding: "10px 6px", borderRadius: 10, background: cat === c.id ? `${c.color}22` : T.elevated, border: `1.5px solid ${cat === c.id ? c.color : T.border}`, color: cat === c.id ? c.color : T.textMuted, fontSize: 11, fontWeight: cat === c.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
-              <Icon name={c.icon} size={17} color={cat === c.id ? c.color : T.textDim} />
-              {c.label}
-            </button>
-          ))}
-        </div>
+        {isPayment ? (
+          <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5, marginBottom: 14, textAlign: "center" }}>
+            Card to pay: <b style={{ color: T.text }}>{cur} {cardToPay.toFixed(2)}</b>
+            <br />Paying the card moves money from your cash to the card. It isn't counted as spending again.
+          </div>
+        ) : (
+          <>
+            {/* Category */}
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Category</div>
+            <div style={{ display: "grid", gridTemplateColumns: isIncome ? "1fr 1fr" : "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+              {cats.map(c => (
+                <button key={c.id} onClick={() => setCat(c.id)}
+                  style={{ padding: "10px 6px", borderRadius: 10, background: cat === c.id ? `${c.color}22` : T.elevated, border: `1.5px solid ${cat === c.id ? c.color : T.border}`, color: cat === c.id ? c.color : T.textMuted, fontSize: 11, fontWeight: cat === c.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
+                  <Icon name={c.icon} size={17} color={cat === c.id ? c.color : T.textDim} />
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Description */}
         <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
-          placeholder={isIncome ? "Source (e.g. Monthly salary, Freelance)" : "Description (e.g. Lidl groceries)"}
+          placeholder={isIncome ? "Source (e.g. Monthly salary, Freelance)" : isPayment ? "Note (e.g. September statement)" : "Description (e.g. Lidl groceries)"}
           style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
 
         {/* Paid with (expenses only) */}
-        {!isIncome && (
+        {entryType === "expense" && (
           <>
             <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", margin: "6px 0 8px" }}>Paid with</div>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -262,7 +277,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
         <div style={{ height: 12 }} />
         <button onClick={handleSave} disabled={saving || !amount || parseFloat(amount) <= 0}
           style={{ width: "100%", padding: "14px 0", background: !amount || parseFloat(amount) <= 0 ? T.elevated : accentColor, color: !amount || parseFloat(amount) <= 0 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 13, fontSize: 15, fontWeight: 700, cursor: saving || !amount ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
-          {saving ? "Saving…" : isIncome ? "Add Income" : "Add Expense"}
+          {saving ? "Saving…" : isIncome ? "Add Income" : isPayment ? "Record card payment" : "Add Expense"}
         </button>
         {(!amount || parseFloat(amount) <= 0) && <Hint style={{ marginTop: 8 }}>Enter an amount above 0 to save.</Hint>}
       </div>
@@ -277,36 +292,34 @@ export default function BudgetPage({ profile, onProfile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const e = await budgetAPI.getAll("month");
-        if (e?.entries) setEntries(e.entries);
-      } catch {}
-      setLoading(false);
-    })();
-  }, []);
+  const [serverCardToPay, setServerCardToPay] = useState(null); // all months, from the server
 
   async function reload() {
     try {
       const e = await budgetAPI.getAll("month");
       if (e?.entries) setEntries(e.entries);
+      if (typeof e?.card_to_pay === "number") setServerCardToPay(e.card_to_pay);
     } catch {}
   }
 
-  // Separate income/savings from expenses
+  useEffect(() => { reload().finally(() => setLoading(false)); }, []);
+
+  // Income/savings come in; card payments only move cash to the card;
+  // everything else is spending.
   const isIncomeEntry = e => e.category === "income" || e.category === "savings";
+  const isCardPayment = e => e.category === CARD_PAYMENT.id;
   const incomeEntries = entries.filter(isIncomeEntry);
-  const expenseEntries = entries.filter(e => !isIncomeEntry(e));
+  const expenseEntries = entries.filter(e => !isIncomeEntry(e) && !isCardPayment(e));
 
   const totalIncome = incomeEntries.reduce((s, e) => s + e.amount, 0);
   const totalExpenses = expenseEntries.reduce((s, e) => s + e.amount, 0);
   const balance = totalIncome - totalExpenses; // after paying the card bill
-  // Credit-card spending is spent money, but it hasn't left the account yet:
-  // cash balance = income − cash spending; the card bill is still to pay.
+  // Credit-card spending is spent money, but it leaves the account only when
+  // the card is paid: cash balance = income − cash spending − card payments.
   const cardSpent = expenseEntries.filter(e => e.payment_method === "card").reduce((s, e) => s + e.amount, 0);
-  const cashBalance = totalIncome - (totalExpenses - cardSpent);
+  const cardPaid = entries.filter(isCardPayment).reduce((s, e) => s + e.amount, 0);
+  const cashBalance = totalIncome - (totalExpenses - cardSpent) - cardPaid;
+  const cardToPay = serverCardToPay ?? Math.max(cardSpent - cardPaid, 0);
   const savingsPct = totalIncome > 0 ? Math.round((balance / totalIncome) * 100) : 0;
 
   const catData = expenseEntries.reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + e.amount; return acc; }, {});
@@ -354,7 +367,7 @@ export default function BudgetPage({ profile, onProfile }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
             {[
               { label: "Cash balance", value: `${cashBalance >= 0 ? "+" : "−"}${cur} ${Math.abs(cashBalance).toFixed(2)}`, color: cashBalance >= 0 ? T.text : T.negative },
-              { label: "Card to pay", value: `${cur} ${cardSpent.toFixed(2)}`, color: cardSpent > 0 ? T.amber : T.textMuted },
+              { label: "Card to pay", value: `${cur} ${cardToPay.toFixed(2)}`, color: cardToPay > 0 ? T.amber : T.textMuted },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
@@ -437,7 +450,7 @@ export default function BudgetPage({ profile, onProfile }) {
           )}
           {grouped.map(([date, items]) => {
             // Money spent that day; income is not spending.
-            const dayTotal = items.filter(e => !isIncomeEntry(e)).reduce((s, e) => s + e.amount, 0);
+            const dayTotal = items.filter(e => !isIncomeEntry(e) && !isCardPayment(e)).reduce((s, e) => s + e.amount, 0);
             return (
               <div key={date} style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -471,7 +484,7 @@ export default function BudgetPage({ profile, onProfile }) {
       </PageScroll>
 
       <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} label="Add income or expense" />
-      {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} />}
+      {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} cardToPay={cardToPay} />}
       {selectedCategory && (
         <CategoryDetailPage
           currency={cur}

@@ -519,7 +519,8 @@ async def list_tools() -> list[Tool]:
             name="log_expense",
             description=(
                 "Log a budget entry. Expense categories: food, rent, transport, fitness, fun, other; "
-                "use income or savings for money coming in. "
+                "use income or savings for money coming in, and card_payment for paying off the "
+                "credit card bill (not spending; the purchases were already logged). "
                 "payment_method: cash (default, includes debit) or card (credit card)."
             ),
             inputSchema={
@@ -529,7 +530,7 @@ async def list_tools() -> list[Tool]:
                     "amount": {"description": "numeric"},
                     "category": {
                         "type": "string",
-                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings"],
+                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "card_payment"],
                     },
                     "payment_method": {"type": "string", "enum": ["cash", "card"]},
                     "description": {"type": "string"},
@@ -1420,7 +1421,9 @@ async def _log_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> di
         args["category"].lower(),
         args.get("description"),
         log_date,
-        "card" if args.get("payment_method") == "card" else "cash",
+        # only purchases can sit on the card; income and card payments are cash
+        "card" if args.get("payment_method") == "card"
+        and args["category"].lower() not in ("income", "savings", "card_payment") else "cash",
     )
     return {"status": "logged", "entry": _serialize(row)}
 

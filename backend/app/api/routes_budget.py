@@ -2,13 +2,13 @@ import logging
 from datetime import date, timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Literal, Optional
+from sqlalchemy import or_, select
+from pydantic import BaseModel, Field
+from typing import Annotated, Literal, Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
-from app.models.budget import BudgetEntry
+from app.models.budget import BudgetEntry, NON_SPENDING_CATEGORIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/budget", tags=["budget"])
@@ -27,7 +27,7 @@ CATEGORY_COLORS = {
 
 
 class BudgetCreate(BaseModel):
-    amount: float
+    amount: Annotated[float, Field(gt=0)]
     category: str
     description: Optional[str] = None
     date_str: Optional[str] = None  # YYYY-MM-DD, defaults to today
@@ -45,6 +45,16 @@ def _entry_dict(e: BudgetEntry) -> dict:
         "date": str(e.date),
         "payment_method": e.payment_method or "cash",
     }
+
+
+def card_outstanding(entries) -> float:
+    """Credit-card spending not paid off yet, across all months: card
+    purchases minus card payments ("card_payment" entries)."""
+    owed = sum(e.amount for e in entries
+               if e.payment_method == "card" and e.category not in NON_SPENDING_CATEGORIES)
+    paid = sum(e.amount for e in entries if e.category == "card_payment")
+    # ponytail: overpaying the card just reads as 0, not as a credit balance
+    return round(max(owed - paid, 0.0), 2)
 
 
 @router.post("/")
@@ -66,7 +76,9 @@ async def add_expense(
         category=body.category.lower(),
         description=body.description,
         date=entry_date,
-        payment_method=body.payment_method,
+        # Paying the card bill (and income) moves real cash; only purchases
+        # can sit on the card.
+        payment_method="cash" if body.category.lower() in NON_SPENDING_CATEGORIES else body.payment_method,
     )
     db.add(entry)
     await db.commit()
@@ -97,10 +109,19 @@ async def get_expenses(
         .order_by(BudgetEntry.date.desc())
     )
     entries = result.scalars().all()
+    # The card bill isn't limited to this period: last month's purchases are
+    # usually paid this month, so look at every card entry.
+    card_result = await db.execute(
+        select(BudgetEntry).where(
+            BudgetEntry.user_id == user["sub"],
+            or_(BudgetEntry.payment_method == "card", BudgetEntry.category == "card_payment"),
+        )
+    )
     return {
         "entries": [_entry_dict(e) for e in entries],
         "total": round(sum(e.amount for e in entries), 2),
         "period": period,
+        "card_to_pay": card_outstanding(card_result.scalars().all()),
     }
 
 
