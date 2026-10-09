@@ -47,3 +47,6 @@ infra/.env.staging
 
 # Published APK (bind-mounted at deploy time, not source)
 infra/apk/
+
+# vite-plugin-pwa dev service worker
+frontend/dev-dist/
