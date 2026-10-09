@@ -178,6 +178,7 @@ class MealLogUpdate(BaseModel):
     protein_g: Optional[NonNeg] = None
     carbs_g: Optional[NonNeg] = None
     fat_g: Optional[NonNeg] = None
+    date: Optional[str] = None  # move the meal to another day (YYYY-MM-DD)
 
 
 @router.put("/log/{log_id}")
@@ -203,6 +204,7 @@ async def update_meal_log(
     if "protein_g" in fields_set and body.protein_g is not None: log.protein_g = body.protein_g
     if "carbs_g" in fields_set: log.carbs_g = body.carbs_g
     if "fat_g" in fields_set: log.fat_g = body.fat_g
+    if body.date: log.date = _parse_client_date(body.date)
     await db.commit()
     await db.refresh(log)
     return _format_log(log)

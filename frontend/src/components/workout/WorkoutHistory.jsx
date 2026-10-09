@@ -2,6 +2,9 @@ import { useState, useMemo } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { IllustratedEmptyState, SkeletonCard } from "../../design/components";
+import { workoutAPI } from "../../utils/api";
+import { replaceLocalCopy } from "../../utils/workouts";
+import { showToast } from "../../utils/toast";
 
 const FILTERS = ["all", "strength", "cardio", "hyrox", "running", "yoga"];
 
@@ -12,10 +15,78 @@ function fmtDay(raw) {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 const sets = (n) => `${n} set${n === 1 ? "" : "s"}`;
+const num = (v) => Math.max(0, parseFloat(v) || 0);
+const field = {
+  width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 10px",
+  color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", colorScheme: "dark",
+};
+const labelStyle = { fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 };
 
-// ── Workout detail bottom-sheet ───────────────────────────────────────────────
-function WorkoutDetailModal({ workout, onClose }) {
+// ── Workout detail bottom-sheet (view, edit, delete) ──────────────────────────
+function WorkoutDetailModal({ workout, onClose, onChanged }) {
+  const [draft, setDraft] = useState(null); // set while editing
+  const [busy, setBusy] = useState(false);
   if (!workout) return null;
+
+  function startEdit() {
+    setDraft({
+      name: workout.name || "",
+      date: String(workout.date || workout.loggedAt || "").slice(0, 10),
+      duration: String(workout.duration_minutes || ""),
+      exercises: (workout.exercises || []).map((e) => ({ name: e.name, sets: (e.sets || []).map((s) => ({ ...s })) })),
+    });
+  }
+
+  const editEx = (ei, fn) => setDraft((d) => ({ ...d, exercises: d.exercises.map((e, i) => (i === ei ? fn(e) : e)) }));
+  const setSet = (ei, si, key, value) => editEx(ei, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === si ? { ...s, [key]: value } : s)) }));
+  const removeSet = (ei, si) => editEx(ei, (e) => ({ ...e, sets: e.sets.filter((_, j) => j !== si) }));
+  const addSet = (ei) => editEx(ei, (e) => ({ ...e, sets: [...e.sets, { ...(e.sets[e.sets.length - 1] || { reps: 0, weight_kg: 0 }) }] }));
+  const removeExercise = (ei) => setDraft((d) => ({ ...d, exercises: d.exercises.filter((_, i) => i !== ei) }));
+
+  async function save() {
+    const name = draft.name.trim() || workout.name || "Workout";
+    const date = draft.date || String(workout.date || workout.loggedAt || "").slice(0, 10);
+    const duration_minutes = Math.max(1, Math.round(num(draft.duration)));
+    const exercises = draft.exercises
+      .map((e) => ({ name: e.name, sets: e.sets.map((s) => ({ ...s, reps: Math.round(num(s.reps)), weight_kg: num(s.weight_kg) })) }))
+      .filter((e) => e.sets.length > 0);
+    const volume = Math.round(exercises.reduce((t, e) => t + e.sets.reduce((u, s) => u + s.weight_kg * s.reps, 0), 0));
+    setBusy(true);
+    try {
+      if (workout.id) {
+        const notes = workout.notes || "";
+        await workoutAPI.update(workout.id, {
+          date,
+          duration_minutes,
+          details: { ...(workout.details || {}), name, exercises, total_volume_kg: volume },
+          // Live sessions lead their notes with the name ("Push Day — 3 exercises…"); keep that in step
+          ...(notes.startsWith(`${workout.name} — `) ? { description: `${name} — ${exercises.length} exercises, ${volume}kg total volume` } : {}),
+        });
+      }
+      replaceLocalCopy(workout, { name, date, duration_minutes, exercises });
+      showToast("Workout updated", "success");
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      showToast(e?.message || "Couldn't save the workout", "error");
+    }
+    setBusy(false);
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete ${workout.name || "this workout"}?`)) return;
+    setBusy(true);
+    try {
+      if (workout.id) await workoutAPI.delete(workout.id);
+      replaceLocalCopy(workout, null);
+      showToast("Workout deleted", "success");
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      showToast(e?.message || "Couldn't delete the workout", "error");
+    }
+    setBusy(false);
+  }
 
   const type        = workout.workout_type || "strength";
   const borderColor = type === "hyrox" ? T.violet : type === "cardio" || type === "running" ? T.amber : T.teal;
@@ -55,6 +126,61 @@ function WorkoutDetailModal({ workout, onClose }) {
           </button>
         </div>
 
+        {draft ? (
+          <>
+            <div>
+              <div style={labelStyle}>Name</div>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Push Day" style={field} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={labelStyle}>Date</div>
+                <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} style={field} />
+              </div>
+              <div>
+                <div style={labelStyle}>Duration (min)</div>
+                <input type="number" inputMode="numeric" min={1} value={draft.duration} onChange={(e) => setDraft({ ...draft, duration: e.target.value })} style={field} />
+              </div>
+            </div>
+
+            {draft.exercises.map((ex, ei) => (
+              <div key={ei} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.text }}>{ex.name}</div>
+                  <button aria-label={`Remove ${ex.name}`} title="Remove exercise" onClick={() => removeExercise(ei)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                    <Icon name="trash" size={14} color={T.negative} />
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 1fr 28px", gap: 6, alignItems: "center" }}>
+                  {["#", "Weight (kg)", "Reps", ""].map((h) => (
+                    <div key={h} style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, textAlign: "center" }}>{h}</div>
+                  ))}
+                  {ex.sets.map((s, si) => [
+                    <div key={`n${si}`} style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, textAlign: "center" }}>{si + 1}</div>,
+                    <input key={`w${si}`} aria-label={`${ex.name} set ${si + 1} weight`} type="number" inputMode="decimal" min={0} step="0.5" value={s.weight_kg ?? ""} onChange={(e) => setSet(ei, si, "weight_kg", e.target.value)} style={{ ...field, textAlign: "center", fontFamily: T.fontMono }} />,
+                    <input key={`r${si}`} aria-label={`${ex.name} set ${si + 1} reps`} type="number" inputMode="numeric" min={0} value={s.reps ?? ""} onChange={(e) => setSet(ei, si, "reps", e.target.value)} style={{ ...field, textAlign: "center", fontFamily: T.fontMono }} />,
+                    <button key={`x${si}`} aria-label={`Remove set ${si + 1}`} title="Remove set" onClick={() => removeSet(ei, si)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", justifyContent: "center" }}>
+                      <Icon name="x" size={13} color={T.textMuted} />
+                    </button>,
+                  ])}
+                </div>
+                <button onClick={() => addSet(ei)} style={{ padding: "7px 0", background: "transparent", border: `1px dashed ${T.teal}55`, borderRadius: 8, color: T.teal, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  + Add set
+                </button>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setDraft(null)} disabled={busy} style={{ flex: 1, padding: "13px 0", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                Cancel
+              </button>
+              <button onClick={save} disabled={busy} style={{ flex: 2, padding: "13px 0", background: busy ? T.elevated : T.teal, border: "none", borderRadius: 12, color: busy ? T.textMuted : "#0A0A0F", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </>
+        ) : (
+        <>
         {/* Stats row */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {[
@@ -147,13 +273,24 @@ function WorkoutDetailModal({ workout, onClose }) {
             No exercise data recorded for this session.
           </div>
         )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button aria-label="Delete workout" title="Delete" onClick={remove} disabled={busy} style={{ width: 52, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name="trash" size={17} color={T.negative} />
+          </button>
+          <button onClick={startEdit} style={{ flex: 1, padding: "13px 0", background: T.teal, border: "none", borderRadius: 12, color: "#0A0A0F", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Icon name="edit" size={15} color="#0A0A0F" /> Edit workout
+          </button>
+        </div>
+        </>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Main export ────────────────────────────────────────────────────────────────
-export default function WorkoutHistory({ history, loading, onSelect }) {
+export default function WorkoutHistory({ history, loading, onSelect, onChanged }) {
   const [filter,          setFilter]   = useState("all");
   const [search,          setSearch]   = useState("");
   const [selectedWorkout, setSelected] = useState(null);
@@ -277,7 +414,7 @@ export default function WorkoutHistory({ history, loading, onSelect }) {
 
       {/* Detail modal */}
       {selectedWorkout && (
-        <WorkoutDetailModal workout={selectedWorkout} onClose={() => setSelected(null)} />
+        <WorkoutDetailModal key={selectedWorkout.id || selectedWorkout.loggedAt} workout={selectedWorkout} onClose={() => setSelected(null)} onChanged={onChanged} />
       )}
     </>
   );

@@ -3,8 +3,8 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Annotated, Optional, List
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
@@ -70,6 +70,14 @@ class WorkoutSaveRequest(BaseModel):
     energy_level: Optional[int] = None
     # Client-local date (YYYY-MM-DD); server date is UTC and can be a day off
     date: Optional[str] = None
+
+
+class WorkoutUpdate(BaseModel):
+    date: Optional[str] = None
+    duration_minutes: Optional[Annotated[int, Field(ge=1)]] = None
+    workout_type: Optional[str] = None
+    description: Optional[str] = None
+    details: Optional[dict] = None
 
 
 def _parse_client_date(raw: Optional[str]) -> date:
@@ -537,6 +545,37 @@ def _fmt_template(t: WorkoutTemplate) -> dict:
         "estimated_duration": t.estimated_duration,
         "tags": t.tags or [],
     }
+
+
+@router.put("/{workout_id}")
+@limiter.limit("30/minute")
+async def update_workout(
+    request: Request,
+    workout_id: int,
+    body: WorkoutUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I change a logged workout: date, duration, name, notes or sets."""
+    result = await db.execute(
+        select(WorkoutLog).where(WorkoutLog.id == workout_id, WorkoutLog.user_id == user["sub"])
+    )
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    if body.date is not None:
+        try:
+            log.date = date.fromisoformat(body.date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Date must look like 2026-10-09.")
+    if body.duration_minutes is not None: log.duration_minutes = body.duration_minutes
+    if body.workout_type is not None: log.workout_type = body.workout_type.lower()
+    if body.description is not None: log.notes = body.description
+    if body.details is not None: log.details = body.details
+    await db.commit()
+    await db.refresh(log)
+    schedule_workout_embedding(log.id)
+    return {"id": log.id, "date": str(log.date), "name": _derive_workout_name(log)}
 
 
 @router.delete("/{workout_id}")

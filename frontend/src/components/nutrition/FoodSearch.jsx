@@ -256,6 +256,87 @@ function DatabaseTab({ onSelect }) {
   );
 }
 
+// One saved meal: tap to add it; the pencil opens an editor under the row.
+function SavedMealRow({ t, onSelect, onSaved, onDeleted }) {
+  const [draft, setDraft] = useState(null); // set while editing
+  const [busy, setBusy] = useState(false);
+  const MACROS = [["calories", "kcal"], ["protein_g", "Protein g"], ["carbs_g", "Carbs g"], ["fat_g", "Fat g"]];
+
+  async function save() {
+    const data = { name: draft.name.trim() || t.name };
+    for (const [k] of MACROS) data[k] = Math.max(0, parseFloat(draft[k]) || 0);
+    setBusy(true);
+    try {
+      onSaved(await mealsAPI.updateTemplate(t.id, data));
+      setDraft(null);
+      showToast("Saved meal updated", "success");
+    } catch (e) { showToast(e?.message || "Couldn't save", "error"); }
+    setBusy(false);
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete the saved meal ${t.name}?`)) return;
+    setBusy(true);
+    try {
+      await mealsAPI.deleteTemplate(t.id);
+      onDeleted();
+      showToast("Saved meal deleted", "success");
+    } catch (e) { showToast(e?.message || "Couldn't delete", "error"); setBusy(false); }
+  }
+
+  const box = { width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${draft ? T.teal + "66" : T.border}`, borderRadius: 10, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <button
+          onClick={() => onSelect({ name: t.name, calories: t.calories || 0, protein_g: t.protein_g || 0, carbs_g: t.carbs_g || 0, fat_g: t.fat_g || 0 })}
+          style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+            <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, fontFamily: T.fontMono }}>
+              {t.calories ? `${t.calories} kcal` : ""}
+              {t.protein_g ? ` · ${t.protein_g}g P` : ""}
+              {t.meal_type && <span style={{ marginLeft: 6, color: T.textDim, textTransform: "capitalize" }}>{t.meal_type}</span>}
+            </div>
+          </div>
+          <span style={{ fontSize: 11, color: T.teal, fontWeight: 700 }}>Add</span>
+        </button>
+        <button aria-label={`Edit ${t.name}`} aria-expanded={!!draft} title="Edit"
+          onClick={() => setDraft(draft ? null : { name: t.name, calories: t.calories ?? 0, protein_g: t.protein_g ?? 0, carbs_g: t.carbs_g ?? 0, fat_g: t.fat_g ?? 0 })}
+          style={{ width: 40, alignSelf: "stretch", background: "none", border: "none", borderLeft: `1px solid ${T.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon name={draft ? "x" : "edit"} size={14} color={T.textMuted} />
+        </button>
+      </div>
+      {draft && (
+        <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <input aria-label="Meal name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={box} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {MACROS.map(([k, lbl]) => (
+              <label key={k} style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 600 }}>
+                {lbl}
+                <input type="number" inputMode="decimal" min={0} value={draft[k]} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
+                  style={{ ...box, marginTop: 4, padding: "8px 4px", textAlign: "center", fontFamily: T.fontMono }} />
+              </label>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button aria-label={`Delete ${t.name}`} title="Delete" onClick={remove} disabled={busy}
+              style={{ width: 44, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name="trash" size={14} color={T.negative} />
+            </button>
+            <button onClick={save} disabled={busy}
+              style={{ flex: 1, padding: "9px 0", background: busy ? T.elevated : T.teal, color: busy ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              {busy ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tab 2: Templates / Saved Meals ────────────────────────────────────────────
 function TemplatesTab({ onSelect }) {
   const [templates, setTemplates] = useState([]);
@@ -300,21 +381,13 @@ function TemplatesTab({ onSelect }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }}>
         {filtered.map((t) => (
-          <button
+          <SavedMealRow
             key={t.id || t.name}
-            onClick={() => onSelect({ name: t.name, calories: t.calories || 0, protein_g: t.protein_g || 0, carbs_g: t.carbs_g || 0, fat_g: t.fat_g || 0 })}
-            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-              <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, fontFamily: T.fontMono }}>
-                {t.calories ? `${t.calories} kcal` : ""}
-                {t.protein_g ? ` · ${t.protein_g}g P` : ""}
-                {t.meal_type && <span style={{ marginLeft: 6, color: T.textDim, textTransform: "capitalize" }}>{t.meal_type}</span>}
-              </div>
-            </div>
-            <span style={{ fontSize: 11, color: T.teal, fontWeight: 700 }}>Add</span>
-          </button>
+            t={t}
+            onSelect={onSelect}
+            onSaved={(next) => setTemplates((all) => all.map((x) => (x.id === t.id ? { ...x, ...next } : x)))}
+            onDeleted={() => setTemplates((all) => all.filter((x) => x.id !== t.id))}
+          />
         ))}
       </div>
     </div>

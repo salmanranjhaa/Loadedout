@@ -5,6 +5,8 @@ import { Card, DetailHeader, PageScroll, MacroBar, MacroRing } from "../../desig
 import { showToast } from "../../utils/toast";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
+const GRAMS_RE = /\((\d+(?:\.\d+)?) g\)$/;
+const oneDp = (v) => Math.round((v || 0) * 10) / 10;
 const MEAL_TYPE_COLORS = { breakfast: T.amber, lunch: T.teal, dinner: T.violet, snack: T.textMuted, default: T.textMuted };
 
 function inp(focused) {
@@ -55,9 +57,25 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
   const [eName, setEName] = useState(initialName);
   const [eMealType, setEMealType] = useState(initialMealType);
   const [eCal, setECal] = useState(String(Math.round(initialCal)));
-  const [eP, setEP] = useState(String(Math.round(initialP)));
-  const [eC, setEC] = useState(String(Math.round(initialC)));
-  const [eF, setEF] = useState(String(Math.round(initialF)));
+  const [eP, setEP] = useState(String(oneDp(initialP)));
+  const [eC, setEC] = useState(String(oneDp(initialC)));
+  const [eF, setEF] = useState(String(oneDp(initialF)));
+  const [eDate, setEDate] = useState(mealDate || "");
+  const [servings, setServings] = useState(1);
+
+  // Amount stepper, like the pantry: foods logged from search carry their
+  // grams in the name ("Banana (100 g)"); anything else steps in servings.
+  const grams = GRAMS_RE.exec(eName.trim());
+  const amount = grams ? parseFloat(grams[1]) : servings;
+  const step = grams ? 10 : 0.5;
+  function changeAmount(next) {
+    if (!(next > 0)) return;
+    const f = next / amount;
+    setECal((v) => String(Math.round((parseFloat(v) || 0) * f)));
+    for (const set of [setEP, setEC, setEF]) set((v) => String(oneDp((parseFloat(v) || 0) * f)));
+    if (grams) setEName((n) => n.trim().replace(GRAMS_RE, `(${next} g)`));
+    else setServings(next);
+  }
 
   // Display values (shown when not editing)
   const displayName = initialName;
@@ -82,6 +100,7 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
         protein_g: parseFloat(eP) || 0,
         carbs_g: parseFloat(eC) || 0,
         fat_g: parseFloat(eF) || 0,
+        ...(eDate && eDate !== mealDate ? { date: eDate } : {}),
       });
       setEditing(false);
     } catch {}
@@ -92,9 +111,11 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
     setEName(initialName);
     setEMealType(initialMealType);
     setECal(String(Math.round(initialCal)));
-    setEP(String(Math.round(initialP)));
-    setEC(String(Math.round(initialC)));
-    setEF(String(Math.round(initialF)));
+    setEP(String(oneDp(initialP)));
+    setEC(String(oneDp(initialC)));
+    setEF(String(oneDp(initialF)));
+    setEDate(mealDate || "");
+    setServings(1);
     setEditing(false);
   }
 
@@ -193,6 +214,26 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
               </div>
             </div>
 
+            {/* Amount (scales calories and macros) + date */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Amount</div>
+                <div style={{ display: "flex", alignItems: "center", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden" }}>
+                  <button aria-label="Less" onClick={() => changeAmount(amount - step)} disabled={amount - step <= 0}
+                    style={{ width: 40, height: 40, background: "none", border: "none", color: T.text, fontSize: 20, cursor: "pointer", opacity: amount - step <= 0 ? 0.3 : 1 }}>−</button>
+                  <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 700, fontFamily: T.fontMono, color: T.text }}>
+                    {grams ? `${amount} g` : `×${amount}`}
+                  </div>
+                  <button aria-label="More" onClick={() => changeAmount(amount + step)}
+                    style={{ width: 40, height: 40, background: "none", border: "none", color: T.text, fontSize: 20, cursor: "pointer" }}>+</button>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Date</div>
+                <input type="date" value={eDate} onChange={e => setEDate(e.target.value)} style={{ ...inp(false), height: 42, colorScheme: "dark" }} />
+              </div>
+            </div>
+
             {/* Macros grid */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <NumField label="Calories (kcal)" value={eCal} onChange={setECal} color={T.amber} />
@@ -278,6 +319,16 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
             }}
           >
             <Icon name="trash" size={17} />
+          </button>
+          <button
+            onClick={() => setEditing(true)}
+            style={{
+              flex: 1, height: 52, borderRadius: 14, background: T.elevated, border: `1px solid ${T.border}`,
+              color: T.text, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}
+          >
+            <Icon name="edit" size={15} /> Edit
           </button>
           <button
             onClick={onSaveAsTemplate}

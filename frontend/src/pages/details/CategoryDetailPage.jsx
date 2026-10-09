@@ -22,7 +22,7 @@ function DailyBars({ days, color }) {
   );
 }
 
-export default function CategoryDetailPage({ category = {}, entries = [], onBack, currency: cur = "CHF" }) {
+export default function CategoryDetailPage({ category = {}, entries = [], onBack, onEdit, currency: cur = "CHF" }) {
   const {
     label,
     name = label || "Category",
@@ -151,7 +151,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
             </div>
           ) : (
             sorted.map((tx) => (
-              <Card key={tx.id} style={{ padding: "12px 14px" }}>
+              <Card key={tx.id} style={{ padding: "12px 14px" }} onClick={onEdit ? () => onEdit(tx) : undefined}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: color + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <Icon name={icon} size={17} color={color} />
