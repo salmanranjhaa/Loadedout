@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots } from "../design/components";
+import { Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots, Hint } from "../design/components";
 import { inventoryAPI } from "../utils/api";
+import { showToast } from "../utils/toast";
 import PantryDetailPage from "./details/PantryDetailPage";
 
 const FILTER_CATS = [
@@ -25,6 +27,11 @@ const CAT_MAP = {
 
 function getCatMeta(id) { return CAT_MAP[id] || CAT_MAP.other; }
 
+// Items added through the MCP tool before the categories were aligned use
+// these older names; show them under the matching Pantry category.
+const CAT_ALIAS = { carbs: "grains", veggies: "produce", spices: "pantry", fats: "pantry" };
+function catOf(item) { return CAT_ALIAS[item.category] || item.category || "other"; }
+
 function AddItemSheet({ onClose, onAdded }) {
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
@@ -40,17 +47,18 @@ function AddItemSheet({ onClose, onAdded }) {
       await inventoryAPI.add({ name: name.trim(), quantity: qty ? Number(qty) : null, unit, category: cat });
       onAdded();
       onClose();
-    } catch (e) { console.error(e); }
+      showToast(`${name.trim()} added to your pantry`, "success");
+    } catch (e) { showToast(e?.message || "Couldn't add the item", "error"); }
     setSaving(false);
   }
 
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)" }} />
-      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: "20px 20px 36px", border: `1px solid ${T.border}` }}>
+      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `20px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Add Item</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: "none", borderRadius: 9999, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted }}>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: "none", borderRadius: 9999, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted }}>
             <Icon name="x" size={14} />
           </button>
         </div>
@@ -89,13 +97,14 @@ function AddItemSheet({ onClose, onAdded }) {
         <button onClick={handleSave} disabled={saving || !name.trim()} style={{ width: "100%", padding: "13px 0", background: T.orange, color: "#0A0A0F", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving || !name.trim() ? "not-allowed" : "pointer", opacity: saving || !name.trim() ? 0.5 : 1, fontFamily: "inherit" }}>
           {saving ? "Adding…" : "Add to Pantry"}
         </button>
+        {!name.trim() && <Hint style={{ marginTop: 8 }}>Enter an item name to add it.</Hint>}
       </div>
     </div>
   );
 }
 
 function ItemCard({ item, onClick }) {
-  const cat = getCatMeta(item.category);
+  const cat = getCatMeta(catOf(item));
   const daysLeft = item.expiry_days;
   const isExpiring = daysLeft != null && daysLeft <= 3;
 
@@ -135,6 +144,7 @@ export default function InventoryPage({ profile, onProfile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
@@ -158,14 +168,14 @@ export default function InventoryPage({ profile, onProfile }) {
 
   const countByFilter = {
     all: items.length,
-    protein: items.filter(i => i.category === "protein").length,
-    produce: items.filter(i => i.category === "produce").length,
-    grains:  items.filter(i => i.category === "grains").length,
-    dairy:   items.filter(i => i.category === "dairy").length,
-    pantry:  items.filter(i => i.category === "pantry").length,
+    protein: items.filter(i => catOf(i) === "protein").length,
+    produce: items.filter(i => catOf(i) === "produce").length,
+    grains:  items.filter(i => catOf(i) === "grains").length,
+    dairy:   items.filter(i => catOf(i) === "dairy").length,
+    pantry:  items.filter(i => catOf(i) === "pantry").length,
   };
 
-  const filtered = filter === "all" ? items : items.filter(i => i.category === filter);
+  const filtered = filter === "all" ? items : items.filter(i => catOf(i) === filter);
 
   // Sort: expiring soon first
   const sorted = [...filtered].sort((a, b) => {
@@ -174,7 +184,17 @@ export default function InventoryPage({ profile, onProfile }) {
     return da - db;
   });
 
-  const mealMatchCount = 3;
+  async function removeItem(item) {
+    if (!window.confirm(`Remove ${item.name} from your pantry?`)) return;
+    try {
+      await inventoryAPI.delete(item.id);
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      setSelectedItem(null);
+      showToast(`${item.name} removed`, "success");
+    } catch (e) {
+      showToast(e?.message || "Couldn't remove the item", "error");
+    }
+  }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, position: "relative" }}>
@@ -182,14 +202,14 @@ export default function InventoryPage({ profile, onProfile }) {
 
       <PageScroll>
         {/* AI chip banner */}
-        <div style={{ margin: "0 20px 16px", borderRadius: T.rCard, background: `linear-gradient(135deg, ${T.violet}33, ${T.orange}22)`, border: `1px solid ${T.violet}44`, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+        <div onClick={() => navigate("/chat")} style={{ margin: "0 20px 16px", borderRadius: T.rCard, background: `linear-gradient(135deg, ${T.violet}33, ${T.orange}22)`, border: `1px solid ${T.violet}44`, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${T.violet}, ${T.orange})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Icon name="sparkle" size={18} color="#0A0A0F" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>AI uses this for meal suggestions</div>
             <div style={{ fontSize: 11, color: T.orange }}>
-              {mealMatchCount} meal ideas match your current pantry · tap to see
+              {items.length ? "Ask the AI coach for meal ideas · tap to open" : "Add what you have so the AI coach can suggest meals"}
             </div>
           </div>
           <Icon name="chev-right" size={16} color={T.textDim} />
@@ -221,21 +241,18 @@ export default function InventoryPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} />
+      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} label="Add pantry item" />
       {showAdd && <AddItemSheet onClose={() => setShowAdd(false)} onAdded={reload} />}
       {selectedItem && (
         <PantryDetailPage
           item={{
             ...selectedItem,
+            category: getCatMeta(catOf(selectedItem)).label,
             expiry_days: selectedItem.expiry_days,
-            location: selectedItem.location || "Fridge",
           }}
           onBack={() => setSelectedItem(null)}
           onChanged={reload}
-          onDelete={() => {
-            setItems(prev => prev.filter(i => i.id !== selectedItem.id));
-            setSelectedItem(null);
-          }}
+          onDelete={() => removeItem(selectedItem)}
         />
       )}
     </div>

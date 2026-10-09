@@ -14,7 +14,7 @@ from app.models.meal import MealTemplate, MealLog
 from app.models.inventory import InventoryItem
 from app.models.schedule import ScheduleEvent
 from app.models.analytics import WorkoutLog, WeightLog
-from app.models.budget import BudgetEntry
+from app.models.budget import BudgetEntry, NON_SPENDING_CATEGORIES
 from app.models.fitness import PersonalRecord
 from app.services.vertex_ai import (
     chat_with_ai,
@@ -191,7 +191,7 @@ async def _build_full_context(db: AsyncSession, user_id: int, message: str, toda
         by_cat: dict[str, float] = {}
         for b in budget_entries:
             by_cat[b.category] = by_cat.get(b.category, 0) + (b.amount or 0)
-        total_spent = sum(v for k, v in by_cat.items() if k != "income")
+        total_spent = sum(v for k, v in by_cat.items() if k not in NON_SPENDING_CATEGORIES)
         cat_line = ", ".join(f"{k}: {v:.0f}" for k, v in sorted(by_cat.items(), key=lambda kv: -kv[1]))
         context += (
             f"\n\nBUDGET (month to date, CHF): total spent {total_spent:.0f}"

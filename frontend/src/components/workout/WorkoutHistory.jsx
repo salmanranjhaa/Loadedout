@@ -5,6 +5,14 @@ import { IllustratedEmptyState, SkeletonCard } from "../../design/components";
 
 const FILTERS = ["all", "strength", "cardio", "hyrox", "running", "yoga"];
 
+// "2026-10-05" -> "Mon 5 Oct" (local date, same style as Budget)
+function fmtDay(raw) {
+  const iso = String(raw || "").slice(0, 10);
+  if (!iso) return "";
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+const sets = (n) => `${n} set${n === 1 ? "" : "s"}`;
+
 // ── Workout detail bottom-sheet ───────────────────────────────────────────────
 function WorkoutDetailModal({ workout, onClose }) {
   if (!workout) return null;
@@ -26,7 +34,7 @@ function WorkoutDetailModal({ workout, onClose }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
+        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
       >
         {/* Handle */}
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
@@ -39,10 +47,10 @@ function WorkoutDetailModal({ workout, onClose }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, textTransform: "capitalize" }}>{workout.name || type}</div>
             <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>
-              {(workout.date || workout.loggedAt || "").slice(0, 10)}
+              {fmtDay(workout.date || workout.loggedAt)}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
             <Icon name="x" size={14} color={T.textMuted} />
           </button>
         </div>
@@ -93,13 +101,13 @@ function WorkoutDetailModal({ workout, onClose }) {
                       <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{ex.name}</div>
                       {(exVolume > 0 || bestSet) && (
                         <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginTop: 1 }}>
-                          {exSets.length} sets
+                          {sets(exSets.length)}
                           {exVolume > 0 && ` · ${Math.round(exVolume).toLocaleString()}kg vol`}
                           {bestSet?.weight_kg > 0 && ` · best ${bestSet.weight_kg}kg×${bestSet.reps}`}
                         </div>
                       )}
                     </div>
-                    <span style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>{exSets.length} sets</span>
+                    <span style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>{sets(exSets.length)}</span>
                   </div>
 
                   {/* Set table */}
@@ -239,8 +247,8 @@ export default function WorkoutHistory({ history, loading, onSelect }) {
                   <span style={{ fontSize: 10, fontWeight: 600, color: borderColor, background: borderColor + "22", padding: "2px 8px", borderRadius: 6, textTransform: "uppercase" }}>{type}</span>
                 </div>
                 <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginBottom: 6 }}>
-                  {(w.date || w.loggedAt || "").slice(0, 10)} · {w.duration_minutes || 0}m
-                  {hasExerciseData && ` · ${totalSets} sets`}
+                  {fmtDay(w.date || w.loggedAt)} · {w.duration_minutes || 0}m
+                  {hasExerciseData && ` · ${sets(totalSets)}`}
                 </div>
                 {totalVolume > 0 && (
                   <div style={{ fontSize: 11, color: T.teal, fontFamily: T.fontMono, fontWeight: 600, marginBottom: 4 }}>

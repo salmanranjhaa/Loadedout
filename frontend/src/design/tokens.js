@@ -108,8 +108,10 @@ export const T = {
   },
 
   // Height the fixed bottom tab bar occupies (content + iOS safe area). Shared
-  // so bottom sheets can sit ABOVE the nav instead of behind it.
-  navHeight: "calc(58px + env(safe-area-inset-bottom, 0px))",
+  // so bottom sheets can sit ABOVE the nav instead of behind it. App sets
+  // --nav-h to 0px while the bar is hidden for the on-screen keyboard, so every
+  // sheet reclaims that space too.
+  navHeight: "var(--nav-h, calc(58px + env(safe-area-inset-bottom, 0px)))",
 };
 
 // Per-domain accents — each tab/page area carries its own hue so the app

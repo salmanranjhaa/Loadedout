@@ -87,10 +87,12 @@ export function Badge({ children, color, size = "sm" }) {
 }
 
 // ── FAB ─────────────────────────────────────────────────────────────────────
-export function Fab({ onClick, icon = "plus", color, right = 20, bottom = 92 }) {
+export function Fab({ onClick, icon = "plus", color, right = 20, bottom = 92, label = "Add" }) {
   const c = color || T.teal;
   return (
     <button
+      aria-label={label}
+      title={label}
       onClick={onClick}
       style={{
         position: "absolute",
@@ -115,6 +117,17 @@ export function Fab({ onClick, icon = "plus", color, right = 20, bottom = 92 }) 
   );
 }
 
+// ── Hint ─────────────────────────────────────────────────────────────────────
+// One line under a disabled button saying what's missing, so a greyed-out
+// button never leaves the user guessing.
+export function Hint({ children, style }) {
+  return (
+    <div style={{ fontSize: 12, color: T.textMuted, textAlign: "center", lineHeight: 1.4, ...style }}>
+      {children}
+    </div>
+  );
+}
+
 // ── Page header ─────────────────────────────────────────────────────────────
 export function PageHeader({ title, subtitle, onProfile, trailing, profile }) {
   const initials = profile?.full_name
@@ -134,6 +147,8 @@ export function PageHeader({ title, subtitle, onProfile, trailing, profile }) {
       </div>
       {trailing}
       <button
+        aria-label="Profile and settings"
+        title="Profile and settings"
         onClick={onProfile}
         style={{
           width: 36,
@@ -168,6 +183,8 @@ export function DetailHeader({ onBack, title, subtitle, trailing }) {
   return (
     <div style={{ padding: "12px 16px 8px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
       <button
+        aria-label="Back"
+        title="Back"
         onClick={onBack}
         style={{
           width: 34,
@@ -618,7 +635,9 @@ export function Modal({ open, onClose, title, children, actions }) {
 }
 
 // ── Bottom Sheet ─────────────────────────────────────────────────────────────
-export function BottomSheet({ open, onClose, title, children, height = "auto" }) {
+// fill: keep the sheet at full height (search sheets), so the search box stays
+// put while results narrow and the list scrolls in the space that's left.
+export function BottomSheet({ open, onClose, title, children, fill = false }) {
   if (!open) return null;
   return (
     <div
@@ -646,7 +665,10 @@ export function BottomSheet({ open, onClose, title, children, height = "auto" })
           // Float the sheet above the fixed bottom nav so its action buttons are
           // never hidden behind it; the dark backdrop still fills the rest.
           marginBottom: T.navHeight,
-          maxHeight: height === "auto" ? "80vh" : height,
+          // % of the overlay, which shrinks with the on-screen keyboard; "80vh"
+          // stayed full-screen tall and pushed the sheet under the status bar.
+          height: fill ? `calc(90% - ${T.navHeight})` : undefined,
+          maxHeight: `calc(90% - ${T.navHeight})`,
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
@@ -660,6 +682,8 @@ export function BottomSheet({ open, onClose, title, children, height = "auto" })
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{title}</div>
           <button
+            aria-label="Close"
+            title="Close"
             onClick={onClose}
             style={{
               background: T.elevated,
@@ -709,7 +733,7 @@ export function Toast({ message, type = "info", onClose }) {
     >
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: c }} />
       <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{message}</span>
-      <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, padding: 2 }}>
+      <button aria-label="Dismiss" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, padding: 2 }}>
         <Icon name="x" size={12} />
       </button>
     </div>

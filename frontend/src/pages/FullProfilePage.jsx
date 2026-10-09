@@ -452,7 +452,7 @@ export default function FullProfilePage({ profile, onClose, onLogout, onProfileU
       {/* Top bar — paddingTop carries the status-bar/notch inset so the header
           never sits under the device notch on a full-screen overlay. */}
       <div style={{ display: "flex", alignItems: "center", padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px 8px", borderBottom: `0.5px solid ${T.border}`, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, color: T.text, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <button aria-label="Back" title="Back" onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, color: T.text, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} />
         </button>
         <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 600, color: T.text }}>Profile & Settings</div>

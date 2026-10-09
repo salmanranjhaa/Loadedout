@@ -10,7 +10,7 @@ import {
 } from "../utils/api";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Card, Button, Input } from "../design/components";
+import { Card, Button, Input, Hint } from "../design/components";
 
 function getResetTokenFromUrl() {
   try {
@@ -301,7 +301,10 @@ export default function LoginPage({ onLogin }) {
               />
             )}
 
+            {/* Collapsed (not removed) so it can animate; inert keeps the hidden
+                field out of the tab order and away from screen readers. */}
             <div
+              {...(mode !== "signup" && { inert: "" })}
               style={{
                 maxHeight: mode === "signup" ? 200 : 0,
                 opacity: mode === "signup" ? 1 : 0,
@@ -342,6 +345,7 @@ export default function LoginPage({ onLogin }) {
             )}
 
             <div
+              {...(mode !== "signup" && mode !== "reset" && { inert: "" })}
               style={{
                 maxHeight: mode === "signup" || mode === "reset" ? 200 : 0,
                 opacity: mode === "signup" || mode === "reset" ? 1 : 0,
@@ -401,6 +405,9 @@ export default function LoginPage({ onLogin }) {
                   : mode === "reset" ? "Set new password"
                   : "Sign in"}
               </Button>
+              {mode === "signup" && !canSubmit && (username || email || password || confirmPassword) && (
+                <Hint style={{ marginTop: 8 }}>Fill in all four fields to create your account.</Hint>
+              )}
             </div>
 
             {(mode === "forgot" || mode === "reset") && (

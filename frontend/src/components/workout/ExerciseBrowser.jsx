@@ -19,17 +19,9 @@ const MUSCLE_GROUPS = [
 const EQUIPMENT   = ["all","barbell","dumbbell","cable","machine","bodyweight","kettlebell","bands"];
 const DIFFICULTIES = ["all","beginner","intermediate","advanced"];
 
-function ProxyGif({ exerciseId, name, size = "100%" }) {
-  const [error, setError] = useState(false);
-  if (error) {
-    return (
-      <div style={{ width: size === "100%" ? "100%" : size, aspectRatio: "1 / 1", borderRadius: 16, background: T.elevated, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon name="dumbbell" size={28} color={T.textDim} />
-      </div>
-    );
-  }
+function ProxyGif({ exerciseId, name, size = "100%", onFail }) {
   return (
-    <img src={`/api/v1/exercises/${exerciseId}/gif`} alt={name} onError={() => setError(true)}
+    <img src={`/api/v1/exercises/${exerciseId}/gif`} alt={name} onError={onFail}
       style={{ width: size === "100%" ? "100%" : size, borderRadius: 16, background: T.elevated, display: "block" }}
     />
   );
@@ -82,6 +74,7 @@ function writeGuidanceCache(id, data) {
 function ExerciseDetailModal({ exercise, onClose, onSelect }) {
   const [guidance, setGuidance]         = useState(null);
   const [loadingGuidance, setLoading]   = useState(false);
+  const [gifFailed, setGifFailed]       = useState(false);
 
   useEffect(() => {
     if (!exercise?.id) return;
@@ -107,14 +100,14 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
     >
       <div
         className="ex-detail-scroll"
-        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
+        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
       >
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{exercise.name}</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             <Icon name="x" size={14} color={T.textMuted} />
           </button>
         </div>
@@ -139,15 +132,18 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
         </div>
 
         {/* Demo — deliberately plated so the white stock GIF reads as content,
-            not as a hole in the dark UI */}
-        <div>
-          <div style={{ ...T.type.eyebrow, fontFamily: T.fontMono, color: T.textDim, marginBottom: 8 }}>Demo</div>
-          <div style={{ background: "#F4F2EC", borderRadius: 16, border: `1px solid ${T.border}`, padding: 10, display: "flex", justifyContent: "center" }}>
-            <div style={{ width: "72%", maxWidth: 240 }}>
-              <ProxyGif exerciseId={exercise.id} name={exercise.name} />
+            not as a hole in the dark UI. Hidden when no GIF can be loaded, so
+            there is no empty white panel. */}
+        {!gifFailed && (
+          <div>
+            <div style={{ ...T.type.eyebrow, fontFamily: T.fontMono, color: T.textDim, marginBottom: 8 }}>Demo</div>
+            <div style={{ background: "#F4F2EC", borderRadius: 16, border: `1px solid ${T.border}`, padding: 10, display: "flex", justifyContent: "center" }}>
+              <div style={{ width: "72%", maxWidth: 240 }}>
+                <ProxyGif exerciseId={exercise.id} name={exercise.name} onFail={() => setGifFailed(true)} />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {loadingGuidance && (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -279,14 +275,17 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
   // reachable — not just the small bundled list. Debounced to avoid spamming.
   useEffect(() => {
     if (!open) return;
+    // A slower, older search must not overwrite a newer one (the list used to
+    // jump back to unfiltered results mid-typing).
+    let stale = false;
     setLoading(true);
     const handle = setTimeout(() => {
       exerciseAPI.list({ q: search.trim(), limit: 150 })
-        .then((data) => setItems((data?.items || []).map(toDisplay)))
-        .catch(() => setItems([]))
-        .finally(() => setLoading(false));
+        .then((data) => { if (!stale) setItems((data?.items || []).map(toDisplay)); })
+        .catch(() => { if (!stale) setItems([]); })
+        .finally(() => { if (!stale) setLoading(false); });
     }, search.trim() ? 350 : 0);
-    return () => clearTimeout(handle);
+    return () => { stale = true; clearTimeout(handle); };
   }, [search, open]);
 
   // Equipment/difficulty/muscle are refined client-side — the library mixes
@@ -306,7 +305,7 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
 
   return (
     <>
-      <BottomSheet open={open} onClose={onClose} title="Exercise Database">
+      <BottomSheet fill open={open} onClose={onClose} title="Exercise Database">
 
         {/* Search */}
         <div style={{ position: "relative" }}>
@@ -381,7 +380,8 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
         )}
 
         {/* Exercise list */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto" }}>
+        {/* Takes whatever height the sheet has left (it shrinks with the keyboard) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minHeight: 0, overflowY: "auto" }}>
           {filtered.map((ex) => (
             <button
               key={ex.id}

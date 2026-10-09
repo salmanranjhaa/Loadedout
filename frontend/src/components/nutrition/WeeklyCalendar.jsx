@@ -1,9 +1,8 @@
 import { T } from "../../design/tokens";
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
 export default function WeeklyCalendar({ data, calorieTarget }) {
-  // data: array of { day: string, calories: number }
+  // data: the last 7 days, oldest first, as { day: "Mon", calories }. Label
+  // each bar with its own day; a fixed Mon–Sun list put today under "Sun".
   const maxCal = Math.max(...data.map((d) => d.calories), calorieTarget * 1.2);
 
   function getColor(cal) {
@@ -36,7 +35,7 @@ export default function WeeklyCalendar({ data, calorieTarget }) {
                   }}
                 />
               </div>
-              <div style={{ fontSize: 10, color: T.textDim, fontWeight: 500 }}>{DAYS[i]}</div>
+              <div style={{ fontSize: 10, color: T.textDim, fontWeight: 500 }}>{d.day}</div>
             </div>
           );
         })}

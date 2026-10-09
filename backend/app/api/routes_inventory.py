@@ -11,7 +11,12 @@ from app.models.inventory import InventoryItem
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
-VALID_CATEGORIES = {"protein", "carbs", "veggies", "dairy", "spices", "fats", "other"}
+# The app's categories, plus the older ones the MCP tool used to write (the
+# Pantry screen shows those under the matching app category).
+VALID_CATEGORIES = {
+    "protein", "produce", "grains", "dairy", "pantry", "other",
+    "carbs", "veggies", "spices", "fats",
+}
 VALID_UNITS = {"g", "kg", "pieces", "tbsp", "tsp", "cups", "L", "ml", "cans", "portions"}
 
 

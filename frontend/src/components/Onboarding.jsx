@@ -95,9 +95,18 @@ export default function Onboarding({ profile, onComplete, onSkip }) {
     onSkip?.();
   }
 
+  // Plausible ranges; a filled-in value outside them gets a message saying so.
+  const RANGES = [
+    ["weight", 25, 300, "Weight must be between 25 and 300 kg."],
+    ["height", 100, 250, "Height must be between 100 and 250 cm."],
+    ["age", 10, 120, "Age must be between 10 and 120."],
+  ];
+  const outOfRange = ([k, lo, hi]) => { const v = parseFloat(form[k]); return !(v >= lo && v <= hi); };
+  const aboutErrors = RANGES.filter((r) => form[r[0]] !== "" && outOfRange(r)).map((r) => r[3]);
+
   const stepValid =
     step === 0 ? true :
-    step === 1 ? (parseFloat(form.weight) > 25 && parseFloat(form.height) > 100 && parseInt(form.age) > 10) :
+    step === 1 ? !RANGES.some(outOfRange) :
     true;
 
   const label = { fontSize: 11, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 };
@@ -162,6 +171,12 @@ export default function Onboarding({ profile, onComplete, onSkip }) {
                 </div>
               </div>
             </div>
+            {aboutErrors.map((msg) => (
+              <div key={msg} style={{ fontSize: 13, color: T.negative }}>{msg}</div>
+            ))}
+            {!stepValid && aboutErrors.length === 0 && (
+              <div style={{ fontSize: 13, color: T.textMuted }}>Enter your weight, height and age to continue.</div>
+            )}
           </>
         )}
 

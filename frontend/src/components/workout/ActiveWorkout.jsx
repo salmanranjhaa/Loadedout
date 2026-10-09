@@ -143,6 +143,9 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
 
       {/* Warmup toggle */}
       <button
+        aria-label={`Set ${setIndex + 1}: warm-up`}
+        aria-pressed={!!set.isWarmup}
+        title="Warm-up set"
         onClick={() => onToggleWarmup(exIndex, setIndex)}
         style={{
           height: 44, width: "100%", background: set.isWarmup ? `${T.amber}33` : T.elevated,
@@ -180,6 +183,9 @@ function SetRow({ set, setIndex, exIndex, onUpdate, onToggleDone, onToggleWarmup
 
       {/* Done button */}
       <button
+        aria-label={`Set ${setIndex + 1}: mark done`}
+        aria-pressed={!!set.done}
+        title="Mark set done"
         onClick={() => onToggleDone(exIndex, setIndex)}
         style={{
           height: 44, width: 40, borderRadius: 10,
@@ -205,11 +211,13 @@ function WorkoutSummary({ workout, onClose }) {
   const durationStr = `${Math.floor(workout.duration_seconds / 60)}m ${workout.duration_seconds % 60}s`;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, animation: "lo-fade-up 0.3s ease" }}>
+    // Stops above the fixed tab bar (like the live session does) and scrolls on
+    // short screens, so "Done" is never hidden under the bar.
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: T.navHeight, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: 24, animation: "lo-fade-up 0.3s ease" }}>
       {/* Glow orb */}
       <div style={{ position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${T.teal}22, transparent 70%)`, pointerEvents: "none" }} />
 
-      <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+      <div style={{ width: "100%", maxWidth: 380, margin: "auto 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
         {/* Trophy + title */}
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>
@@ -257,7 +265,7 @@ function WorkoutSummary({ workout, onClose }) {
               return (
                 <div key={ex.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
                   <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 500 }}>{ex.name}</span>
-                  <span style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{ex.sets.length} sets{vol > 0 ? ` · ${Math.round(vol)}kg` : ""}</span>
+                  <span style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{ex.sets.length} set{ex.sets.length === 1 ? "" : "s"}{vol > 0 ? ` · ${Math.round(vol)}kg` : ""}</span>
                 </div>
               );
             })}
@@ -402,47 +410,45 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
     setShowBrowser(false);
   }, []);
 
-  const addSet = (exIndex) => {
-    setExercises((prev) => {
-      const next    = [...prev];
-      const lastSet = next[exIndex].sets[next[exIndex].sets.length - 1];
-      next[exIndex].sets.push({
-        reps:      lastSet ? String(lastSet.reps) : "",
-        weight_kg: lastSet ? String(lastSet.weight_kg) : "",
-        rpe:       "",
-        done:      false,
-        isWarmup:  false,
-      });
-      return next;
-    });
-  };
+  // State updates below copy instead of mutating: React may run an updater
+  // twice (StrictMode does in dev), which used to tick a set on and straight
+  // back off, and add two rows per "Add Set".
+  const changeSets = (exIndex, fn) =>
+    setExercises((prev) => prev.map((ex, i) => (i === exIndex ? { ...ex, sets: fn(ex.sets) } : ex)));
 
-  const updateSet = (exIndex, setIndex, field, value) => {
-    setExercises((prev) => {
-      const next = [...prev];
-      next[exIndex].sets[setIndex][field] = value;
-      return next;
-    });
-  };
+  const addSet = (exIndex) => changeSets(exIndex, (sets) => {
+    const lastSet = sets[sets.length - 1];
+    return [...sets, {
+      reps:      lastSet ? String(lastSet.reps) : "",
+      weight_kg: lastSet ? String(lastSet.weight_kg) : "",
+      rpe:       "",
+      done:      false,
+      isWarmup:  false,
+    }];
+  });
 
+  const updateSet = (exIndex, setIndex, field, value) =>
+    changeSets(exIndex, (sets) => sets.map((s, j) => (j === setIndex ? { ...s, [field]: value } : s)));
+
+  // Side effects (PR save, celebration, rest timer) run once here in the
+  // handler, never inside a state updater.
   const toggleSetDone = (exIndex, setIndex) => {
-    setExercises((prev) => {
-      const next  = [...prev];
-      const set   = next[exIndex].sets[setIndex];
-      set.done    = !set.done;
-      if (set.done && !set.isWarmup) {
-        const weight = parseFloat(set.weight_kg) || 0;
-        const reps   = parseInt(set.reps) || 0;
-        if (weight > 0 && savePR(next[exIndex].name, weight, reps)) {
-          next[exIndex].newPR = { weight_kg: weight, reps };
-          setCelebration({ exercise: next[exIndex].name, weight, reps });
-          setTimeout(() => setCelebration(null), 2500);
-        }
-        setRestActive(true);
-        setRestTimer(90);
+    const ex   = exercises[exIndex];
+    const set  = ex.sets[setIndex];
+    const done = !set.done;
+    if (done && !set.isWarmup) {
+      const weight = parseFloat(set.weight_kg) || 0;
+      const reps   = parseInt(set.reps) || 0;
+      if (weight > 0 && savePR(ex.name, weight, reps)) {
+        const newPR = { weight_kg: weight, reps };
+        setExercises((prev) => prev.map((e, i) => (i === exIndex ? { ...e, newPR } : e)));
+        setCelebration({ exercise: ex.name, weight, reps });
+        setTimeout(() => setCelebration(null), 2500);
       }
-      return next;
-    });
+      setRestActive(true);
+      setRestTimer(90);
+    }
+    updateSet(exIndex, setIndex, "done", done);
   };
 
   const removeExercise = (exIndex) => setExercises((prev) => prev.filter((_, i) => i !== exIndex));
@@ -453,7 +459,9 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   const buildWorkout = (includeAll) => ({
     name:             template?.name || "Quick Workout",
     workout_type:     template?.workout_type || "strength",
-    duration_minutes: Math.floor(elapsed / 60),
+    // Same 1-minute floor the server applies, so the list doesn't read "0m"
+    // right after finishing and "1m" after a reload.
+    duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
     duration_seconds: elapsed,
     date:             localISODate(),
     exercises: exercises.map((ex) => ({
@@ -473,8 +481,9 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
   // Persist to localStorage (offline cache) + backend (cross-device sync,
   // analytics, AI coach). The set breakdown rides along in `details.exercises`.
   const persistWorkout = (workout) => {
-    saveWorkoutToHistory(workout);
+    // A session with no completed sets isn't a workout; don't count it.
     if (workout.exercises.length === 0) return;
+    saveWorkoutToHistory(workout);
 
     const totalVolume = workout.exercises.reduce(
       (s, e) => s + e.sets.reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0), 0
@@ -573,7 +582,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
       {/* Header — paddingTop carries the top safe-area inset so the title/timer
           and the Finish button always clear the notch/status-bar zone. */}
       <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 12px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <button onClick={requestClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <button aria-label="Back" title="Back" onClick={requestClose} style={{ width: 34, height: 34, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <Icon name="chev-left" size={16} color={T.text} />
         </button>
         <div style={{ flex: 1, textAlign: "center" }}>
@@ -657,7 +666,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
                     )}
                   </div>
                 </div>
-                <button onClick={() => removeExercise(exIndex)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6 }}>
+                <button aria-label={`Remove ${ex.name}`} title="Remove exercise" onClick={() => removeExercise(exIndex)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6 }}>
                   <Icon name="trash" size={13} color={T.negative} />
                 </button>
               </div>

@@ -98,6 +98,8 @@ function DayNav({ selectedDate, onNav }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 16px 10px" }}>
       <button
+        aria-label="Previous day"
+        title="Previous day"
         onClick={() => onNav(-1)}
         style={{
           width: 32,
@@ -136,6 +138,8 @@ function DayNav({ selectedDate, onNav }) {
         )}
       </div>
       <button
+        aria-label="Next day"
+        title="Next day"
         onClick={() => !isFuture && onNav(1)}
         style={{
           width: 32,
@@ -233,9 +237,11 @@ function MealRow({ meal, onDelete, deleting, onClick }) {
         <div style={{ fontSize: 9, color: T.textDim }}>kcal</div>
       </div>
       <button
+        aria-label={`Delete ${meal.name}`}
+        title="Delete"
         onClick={(e) => {
           e.stopPropagation();
-          onDelete(meal.id);
+          if (window.confirm(`Delete ${meal.name}?`)) onDelete(meal.id);
         }}
         disabled={deleting}
         style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: T.textDim, borderRadius: 6, opacity: deleting ? 0.4 : 1, flexShrink: 0 }}
@@ -445,9 +451,12 @@ export default function MealsPage({ profile, onProfile }) {
 
   async function handleAddFood(food, groupName) {
     const mealType = (groupName || "breakfast").toLowerCase().replace("snacks", "snack");
+    // ponytail: the amount rides in the name ("Chicken Breast (200 g)") because
+    // meal logs have no portion column; add one if grams need to be edited later.
+    const name = food.portion_g ? `${food.name} (${food.portion_g} g)` : food.name;
     try {
       const res = await mealsAPI.logMeal({
-        name: food.name,
+        name,
         meal_type: mealType,
         calories: food.calories || 0,
         protein_g: food.protein_g || 0,
@@ -469,7 +478,7 @@ export default function MealsPage({ profile, onProfile }) {
         }).catch(() => {});
       }
       setAddModal(null);
-      showToast(res?.queued ? "Saved offline — will sync later" : `${food.name} logged`, "success");
+      showToast(res?.queued ? "Saved offline — will sync later" : `${name} logged`, "success");
       refresh();
     } catch (err) {
       showToast(err.message || "Couldn't log meal", "error");
@@ -480,6 +489,7 @@ export default function MealsPage({ profile, onProfile }) {
     try {
       await mealsAPI.updateLog(id, payload);
       setSelectedMeal((prev) => prev ? { ...prev, ...payload } : prev);
+      showToast("Changes saved", "success");
       refresh();
     } catch (err) {
       showToast(err.message || "Couldn't update meal", "error");
@@ -487,6 +497,7 @@ export default function MealsPage({ profile, onProfile }) {
   }
 
   async function handleDeleteMealFromDetail(id) {
+    if (!window.confirm(`Delete ${selectedMeal?.name || "this meal"}?`)) return;
     try {
       await mealsAPI.deleteLog(id);
       setSelectedMeal(null);
@@ -676,7 +687,7 @@ export default function MealsPage({ profile, onProfile }) {
       </PageScroll>
 
       {/* Add meal modal */}
-      <BottomSheet open={!!addModal} onClose={() => setAddModal(null)} title={`Add to ${addModal?.groupName || ""}`}>
+      <BottomSheet fill open={!!addModal} onClose={() => setAddModal(null)} title={`Add to ${addModal?.groupName || ""}`}>
         <FoodSearch
           onSelect={(food) => {
             handleAddFood(food, addModal?.groupName);

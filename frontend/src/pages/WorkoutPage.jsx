@@ -3,6 +3,7 @@ import { T, muscleColors } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { Card, Chip, PageHeader, PageScroll, SectionHead, IllustratedEmptyState, SkeletonCard, Badge } from "../design/components";
 import { workoutAPI, aiAPI } from "../utils/api";
+import { mergeWorkoutHistory } from "../utils/workouts";
 import { showToast } from "../utils/toast";
 import ExerciseBrowser from "../components/workout/ExerciseBrowser";
 import ActiveWorkout from "../components/workout/ActiveWorkout";
@@ -37,7 +38,9 @@ function TemplateCardSmall({ t, onStart }) {
     <div style={{ width: 220, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <Badge color={c} size="sm">{(t.workout_type || "strength").toUpperCase()}</Badge>
       <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{t.name}</div>
-      <div style={{ fontSize: 12, color: T.textMuted }}>{t.exercises?.length || 0} exercises · {t.duration || "—"}</div>
+      <div style={{ fontSize: 12, color: T.textMuted }}>
+        {t.exercises?.length || 0} exercise{t.exercises?.length === 1 ? "" : "s"}{t.estimated_duration ? ` · ${t.duration}` : ""}
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {(t.muscles || []).slice(0, 3).map((m) => (
           <span key={m} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 7px" }}>{m}</span>
@@ -59,6 +62,16 @@ const MUSCLE_TO_GROUP = {
 const PUSH_MUSCLES = new Set(["chest", "shoulders", "arms"]);
 const PULL_MUSCLES = new Set(["back"]);
 const LEG_MUSCLES  = new Set(["legs"]);
+
+// Whole days between a logged date and today, both in local time. Parsing
+// "2026-10-05" with new Date() gives UTC midnight, which read as "-1d ago"
+// shortly after local midnight east of UTC.
+function daysAgo(raw) {
+  const d = new Date(String(raw).slice(0, 10) + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((today - d) / 86400000);
+}
 
 function getMuscleFromExerciseName(name) {
   const ex = exerciseData.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
@@ -86,9 +99,7 @@ function analyzeWorkoutHistory(history) {
   // Suggest next using PPL cycle
   const nextGroup = lastGroup === "Push" ? "Pull" : lastGroup === "Pull" ? "Legs" : "Push";
 
-  // Days since last workout
-  const lastDate = new Date(lastWorkout.date || lastWorkout.loggedAt);
-  const daysSince = Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24));
+  const daysSince = daysAgo(lastWorkout.date || lastWorkout.loggedAt);
 
   return { lastGroup, nextGroup, daysSince, lastWorkout };
 }
@@ -99,9 +110,8 @@ function getMuscleRecency(history) {
   for (const w of sorted) {
     for (const ex of w.exercises || []) {
       const m = getMuscleFromExerciseName(ex.name);
-      if (m && !recency[m]) {
-        const date = new Date(w.date || w.loggedAt);
-        recency[m] = Math.floor((Date.now() - date) / (1000 * 60 * 60 * 24));
+      if (m && recency[m] == null) {
+        recency[m] = daysAgo(w.date || w.loggedAt);
       }
     }
   }
@@ -125,10 +135,12 @@ function HeroCard({ onStart, onBrowse, workoutInsight, aiSuggestion, aiThinking 
 
   const ai = aiSuggestion;
   const isRest = ai?.is_rest_day;
-  const title = ai ? (isRest ? "Rest Day" : ai.template_name) : `${nextGroup} Day`;
+  // With no history there is nothing to base a split on; Quick Start opens an
+  // empty session, so don't promise a "Push Day" that won't appear.
+  const title = ai ? (isRest ? "Rest Day" : ai.template_name) : insight ? `${nextGroup} Day` : "Start a workout";
   const subtitle = ai
     ? ai.reason
-    : `${info.description} · ${info.muscles.join(", ")}`;
+    : insight ? `${info.description} · ${info.muscles.join(", ")}` : "Add exercises as you go, or create a template with the + button.";
   const tag = ai ? (isRest ? "AI Coach · Recovery" : `AI Pick · ${ai.focus || "Today"}`) : insight ? "Suggested next" : "Quick start";
 
   return (
@@ -228,12 +240,14 @@ function SpeedDialFAB({ onAILog, onManualLog, onNewTemplate }) {
       {open && actions.map((a, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `speedDialIn 0.15s ${i * 0.05}s both` }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: T.text, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, padding: "4px 10px", whiteSpace: "nowrap" }}>{a.label}</span>
-          <button onClick={() => { setOpen(false); a.handler(); }} style={{ width: 44, height: 44, borderRadius: 9999, background: a.color + "22", border: `1px solid ${a.color}44`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button aria-label={a.label} onClick={() => { setOpen(false); a.handler(); }} style={{ width: 44, height: 44, borderRadius: 9999, background: a.color + "22", border: `1px solid ${a.color}44`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name={a.icon} size={18} color={a.color} />
           </button>
         </div>
       ))}
       <button
+        aria-label={open ? "Close menu" : "Add workout or template"}
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         style={{ width: 56, height: 56, borderRadius: 9999, background: T.teal, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 24px ${T.teal}55`, transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s cubic-bezier(.34,1.56,.64,1)" }}
       >
@@ -281,11 +295,11 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>AI Workout Logger</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div>
@@ -385,11 +399,11 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+      <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Browse Templates</div>
-          <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+          <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
         </div>
 
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
@@ -471,13 +485,13 @@ function NewTemplateModal({ onClose, onSaved }) {
   return (
     <>
       <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+        <div style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
           <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>New Template</div>
-            <button onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
+            <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
           </div>
 
           {/* Name */}
@@ -511,7 +525,7 @@ function NewTemplateModal({ onClose, onSaved }) {
                   <div key={i} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 24, height: 24, borderRadius: 7, background: T.teal + "22", display: "flex", alignItems: "center", justifyContent: "center", color: T.teal, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{ex.name}</div>
-                    <button onClick={() => removeExercise(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: T.negative }}>
+                    <button aria-label={`Remove ${ex.name}`} onClick={() => removeExercise(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: T.negative }}>
                       <Icon name="trash" size={14} color={T.negative} />
                     </button>
                   </div>
@@ -572,17 +586,8 @@ export default function WorkoutPage({ profile, onProfile }) {
     try {
       const [logs, tmpl] = await Promise.all([workoutAPI.getAll(30), workoutAPI.getTemplates()]);
       const localHistory = JSON.parse(localStorage.getItem("lo_workout_history") || "[]");
-      const apiLogs      = logs?.workouts || [];
-      // Live sessions are saved both locally and to the API — drop local copies
-      // that already exist server-side (same day, notes lead with the session name)
-      const localOnly = localHistory.filter((l) => {
-        const lDate = (l.date || l.loggedAt || "").slice(0, 10);
-        return !apiLogs.some((a) =>
-          (a.date || "").slice(0, 10) === lDate &&
-          (a.notes || "").startsWith(l.name || "")
-        );
-      });
-      const merged = [...apiLogs, ...localOnly].sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
+      const merged = mergeWorkoutHistory(logs?.workouts || [], localHistory)
+        .sort((a, b) => new Date(b.date || b.loggedAt) - new Date(a.date || a.loggedAt));
       setHistory(merged.slice(0, 50));
 
       // Merge API templates + local custom templates

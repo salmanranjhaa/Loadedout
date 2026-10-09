@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, Suspense, lazy } from "react";
-import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { isLoggedIn, clearToken, userAPI } from "./utils/api";
 import { initOfflineSync } from "./utils/offline";
 import { T, domainColor } from "./design/tokens";
@@ -99,6 +99,7 @@ function PageFallback() {
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const accent = domainColor(location.pathname);
   const [loggedIn, setLoggedIn]         = useState(isLoggedIn());
   const [profile, setProfile]           = useState(null);
@@ -149,6 +150,31 @@ export default function App() {
     setShowFullProfile(false);
   }, [location.pathname]);
 
+  // On phones the on-screen keyboard shrinks the app, and the fixed tab bar
+  // rode up on top of it, covering form buttons (Add Income, Add to Pantry).
+  // Hide the bar while a text field has focus; --nav-h lets every sheet that
+  // reserves room for the bar take that space back.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    if (!window.matchMedia?.("(pointer: coarse)").matches) return; // desktop: no on-screen keyboard
+    const update = () => setTyping(!!document.activeElement?.matches?.(
+      'textarea, [contenteditable="true"], input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=time]):not([type=date]):not([type=file])'
+    ));
+    // focusout fires before the next field's focusin; check after both so
+    // moving between fields doesn't flash the bar.
+    const deferred = () => setTimeout(update, 0);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", deferred);
+    return () => {
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", deferred);
+    };
+  }, []);
+  useEffect(() => {
+    if (typing) document.documentElement.style.setProperty("--nav-h", "0px");
+    else document.documentElement.style.removeProperty("--nav-h");
+  }, [typing]);
+
   // 5-tap status bar easter egg
   function onStatusTap() {
     setNotchTaps((t) => {
@@ -166,7 +192,19 @@ export default function App() {
 
   function handleLogout() {
     clearToken();
+    // These browser-only caches belong to the person signing out; on a shared
+    // device the next account used to see their workouts, records and setup
+    // state (and skip its own onboarding).
+    ["lo_workout_history", "lo_prs", "lo_custom_templates", "lo_wk_suggestion_v1", "lo_onboarded"]
+      .forEach((k) => localStorage.removeItem(k));
+    Object.keys(localStorage).filter((k) => k.startsWith("lo_supps_")).forEach((k) => localStorage.removeItem(k));
+    setOnboardingDone(false);
     setProfile(null);
+    // The next sign-in should start fresh on Schedule, not reopen the
+    // settings panel on whatever tab was showing.
+    setShowProfile(false);
+    setShowFullProfile(false);
+    navigate("/schedule", { replace: true });
     setLoggedIn(false);
   }
 
@@ -290,6 +328,7 @@ export default function App() {
       {/* Bottom tab bar */}
       <nav
         style={{
+          display: typing ? "none" : undefined,
           position: "fixed",
           bottom: 0,
           left: "50%",

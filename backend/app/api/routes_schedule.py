@@ -34,6 +34,12 @@ class EventUpdate(BaseModel):
     reason: Optional[str] = None  # I ask the user why they changed it for RAG learning
 
 
+def _require_end_after_start(start: Optional[time], end: Optional[time]) -> None:
+    # Older and Google-synced events may have no end time; only check real ranges.
+    if start is not None and end is not None and end <= start:
+        raise HTTPException(status_code=400, detail="End time must be after the start time.")
+
+
 class GoogleCalendarSyncRequest(BaseModel):
     days_back: int = 1
     days_ahead: int = 30
@@ -142,14 +148,16 @@ async def create_event(
     user: dict = Depends(get_current_user),
 ):
     """I create a new schedule event."""
+    start, end = time.fromisoformat(event.start_time), time.fromisoformat(event.end_time)
+    _require_end_after_start(start, end)
     db_event = ScheduleEvent(
         user_id=user["sub"],
         title=event.title,
         description=event.description,
         event_type=EventType(event.event_type),
         day_of_week=event.day_of_week,
-        start_time=time.fromisoformat(event.start_time),
-        end_time=time.fromisoformat(event.end_time),
+        start_time=start,
+        end_time=end,
         location=event.location,
         event_data=event.event_data,
     )
@@ -197,6 +205,7 @@ async def update_event(
     if update.end_time:
         event.end_time = time.fromisoformat(update.end_time)
         new_values["end_time"] = update.end_time
+    _require_end_after_start(event.start_time, event.end_time)
     if update.description is not None:
         event.description = update.description
     if update.event_data is not None:

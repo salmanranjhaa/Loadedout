@@ -10,11 +10,14 @@ export default function VolumeChart({ history }) {
   const [activeMuscles, setActiveMuscles] = useState(["chest", "back", "legs"]);
 
   const chartData = useMemo(() => {
-    // Group by week
+    // Group by the Monday that starts each week (local time). The old key was
+    // the week of the month labelled as a year week ("2026-W01"), which also
+    // merged the first weeks of different months.
     const weeks = {};
     history.forEach((w) => {
-      const date = new Date(w.date || w.loggedAt);
-      const key = `${date.getFullYear()}-W${String(Math.ceil(date.getDate() / 7)).padStart(2, "0")}`;
+      const date = new Date(String(w.date || w.loggedAt).slice(0, 10) + "T00:00:00");
+      date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
       if (!weeks[key]) weeks[key] = {};
       (w.exercises || []).forEach((ex) => {
         const muscle = ex.muscle || "fullBody";
@@ -59,7 +62,8 @@ export default function VolumeChart({ history }) {
       </div>
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-          <XAxis dataKey="week" tick={{ fill: T.textDim, fontSize: 10 }} axisLine={false} tickLine={false} />
+          <XAxis dataKey="week" tick={{ fill: T.textDim, fontSize: 10 }} axisLine={false} tickLine={false}
+            tickFormatter={(k) => new Date(k + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })} />
           <YAxis tick={{ fill: T.textDim, fontSize: 10 }} axisLine={false} tickLine={false} />
           <Tooltip
             contentStyle={{
