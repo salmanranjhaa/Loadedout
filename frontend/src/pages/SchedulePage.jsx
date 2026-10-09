@@ -90,7 +90,7 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
           display: "flex",
           flexDirection: "column",
           gap: 14,
-          maxHeight: `calc(100dvh - ${T.navHeight})`,
+          maxHeight: `calc(100% - ${T.navHeight})`,
           overflowY: "auto",
         }}
       >

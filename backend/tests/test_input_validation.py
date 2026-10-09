@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import HTTPException  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
+from app.api.routes_budget import BudgetCreate  # noqa: E402
 from app.api.routes_meals import MealLogCreate, MealLogUpdate  # noqa: E402
 from app.api.routes_schedule import _require_end_after_start  # noqa: E402
 
@@ -35,6 +36,12 @@ def test_meal_log_rejects_negative_macros():
     ok = dict(meal_type="lunch", name="Chicken", calories=330, protein_g=62)
     assert MealLogCreate(**ok).calories == 330
     assert _rejected(lambda: MealLogCreate(**{**ok, "protein_g": -5}))
+
+
+def test_budget_payment_method_is_cash_or_card():
+    assert BudgetCreate(amount=10, category="food").payment_method == "cash"
+    assert BudgetCreate(amount=10, category="food", payment_method="card").payment_method == "card"
+    assert _rejected(lambda: BudgetCreate(amount=10, category="food", payment_method="crypto"))
 
 
 def test_event_must_end_after_it_starts():

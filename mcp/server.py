@@ -518,8 +518,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="log_expense",
             description=(
-                "Log a budget expense. "
-                "category: food, transport, uni, health, entertainment, shopping, other."
+                "Log a budget entry. Expense categories: food, rent, transport, fitness, fun, other; "
+                "use income or savings for money coming in. "
+                "payment_method: cash (default, includes debit) or card (credit card)."
             ),
             inputSchema={
                 "type": "object",
@@ -528,8 +529,9 @@ async def list_tools() -> list[Tool]:
                     "amount": {"description": "numeric"},
                     "category": {
                         "type": "string",
-                        "enum": ["food", "transport", "uni", "health", "entertainment", "shopping", "other"],
+                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings"],
                     },
+                    "payment_method": {"type": "string", "enum": ["cash", "card"]},
                     "description": {"type": "string"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                 },
@@ -1409,15 +1411,16 @@ async def _log_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> di
     log_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
     row = await conn.fetchrow(
         """
-        INSERT INTO budget_entries (user_id, amount, category, description, date)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, amount, category, description, date
+        INSERT INTO budget_entries (user_id, amount, category, description, date, payment_method)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, amount, category, description, date, payment_method
         """,
         user_id,
         round(_f(args["amount"]), 2),
         args["category"].lower(),
         args.get("description"),
         log_date,
+        "card" if args.get("payment_method") == "card" else "cash",
     )
     return {"status": "logged", "entry": _serialize(row)}
 
@@ -1435,7 +1438,7 @@ async def _get_expenses(conn: asyncpg.Connection, user_id: int, args: dict) -> d
 
     rows = await conn.fetch(
         """
-        SELECT id, amount, category, description, date
+        SELECT id, amount, category, description, date, payment_method
         FROM budget_entries WHERE user_id=$1 AND date>=$2
         ORDER BY date DESC
         """,

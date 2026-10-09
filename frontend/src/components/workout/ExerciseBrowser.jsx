@@ -100,7 +100,7 @@ function ExerciseDetailModal({ exercise, onClose, onSelect }) {
     >
       <div
         className="ex-detail-scroll"
-        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100dvh - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
+        style={{ width: "100%", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, maxHeight: `calc(100% - ${T.navHeight})`, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}
       >
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
 
@@ -305,7 +305,7 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
 
   return (
     <>
-      <BottomSheet open={open} onClose={onClose} title="Exercise Database">
+      <BottomSheet fill open={open} onClose={onClose} title="Exercise Database">
 
         {/* Search */}
         <div style={{ position: "relative" }}>
@@ -380,7 +380,8 @@ export default function ExerciseBrowser({ open, onClose, onSelectExercise }) {
         )}
 
         {/* Exercise list */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto" }}>
+        {/* Takes whatever height the sheet has left (it shrinks with the keyboard) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minHeight: 0, overflowY: "auto" }}>
           {filtered.map((ex) => (
             <button
               key={ex.id}

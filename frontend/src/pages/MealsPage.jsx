@@ -687,7 +687,7 @@ export default function MealsPage({ profile, onProfile }) {
       </PageScroll>
 
       {/* Add meal modal */}
-      <BottomSheet open={!!addModal} onClose={() => setAddModal(null)} title={`Add to ${addModal?.groupName || ""}`}>
+      <BottomSheet fill open={!!addModal} onClose={() => setAddModal(null)} title={`Add to ${addModal?.groupName || ""}`}>
         <FoodSearch
           onSelect={(food) => {
             handleAddFood(food, addModal?.groupName);

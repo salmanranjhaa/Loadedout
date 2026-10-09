@@ -104,25 +104,27 @@ Must hold:
 
 ## J5: Track grocery spending against the monthly budget
 Actor: any
-Goal: A user on a fixed monthly income records it and logs this week's grocery shopping, so they can see how much of the month's food budget is left and what balance remains.
+Goal: A user on a fixed monthly income records it and logs this week's grocery shopping, partly paid by credit card, so they can see how much of the month's food budget is left, how much cash they have, and what remains once the card bill is paid.
 Steps:
 1. Open the Budget tab and look at "Balance this month" and the Food tile under "Category budgets".
 2. Tap the round + button, choose Income, type 1500 as the amount, keep the Income category, type Monthly allowance as the source and tap Add Income.
 3. Tap the + button again. With Expense selected, leave the amount empty, then type 0, and try to tap Add Expense.
-4. Type 64.80 as the amount, choose Food, type Weekly groceries as the description and tap Add Expense.
-5. Add another Food expense of 15.20 described as Bakery.
-6. Read the balance card, the Food tile and the Transactions list.
-7. Tap the Food tile, read the details, then go back.
-8. Tap the round profile button, tap Full settings, choose EUR under Currency, then go back to Budget.
-9. Close the app and open it again, then go back to the Budget tab.
+4. Type 64.80 as the amount, choose Food, keep "Cash / debit" under Paid with, type Weekly groceries as the description and tap Add Expense.
+5. Add another Food expense of 15.20 paid with "Cash / debit", described as Bakery.
+6. Add a Food expense of 20 described as Takeaway, and choose "Credit card" under Paid with.
+7. Read the balance card, the Food tile and the Transactions list.
+8. Tap the Food tile, read the details, then go back.
+9. Tap the round profile button, tap Full settings, choose EUR under Currency, then go back to Budget.
+10. Close the app and open it again, then go back to the Budget tab.
 Must hold:
-- Add Expense can't be used while the amount is empty or 0.
-- After the three entries, the balance card shows +CHF 1420.00, with Income CHF 1500, Spent CHF 80 and Saved CHF 1420.
-- The Food tile shows CHF 80 / 400.
-- The Food details show "CHF 320 remaining", 20%, "2 transactions this month", and both entries: Weekly groceries at CHF 64.80 and Bakery at CHF 15.20.
-- The Transactions list under Today shows Monthly allowance, Weekly groceries and Bakery with their amounts.
+- Add Expense can't be used while the amount is empty or 0, and the form says what's missing.
+- After the four entries, the balance card shows +CHF 1400.00, with Income CHF 1500, Spent CHF 100 and Saved CHF 1400.
+- The balance card also shows Cash balance +CHF 1420.00 and Card to pay CHF 20.00, because the takeaway went on the credit card.
+- The Food tile shows CHF 100 / 400.
+- The Food details show "CHF 300 remaining", 25%, "3 transactions this month", and the entries Weekly groceries (CHF 64.80), Bakery (CHF 15.20) and Takeaway (CHF 20.00).
+- The Transactions list under Today shows Monthly allowance, Weekly groceries, Bakery and Takeaway with their amounts, and Takeaway is marked "Credit card".
 - After EUR is chosen in the settings, the Budget screen shows its amounts in EUR, not CHF.
-- After reopening the app, all three entries and the totals are unchanged.
+- After reopening the app, all four entries, the totals and the cash and card figures are unchanged.
 
 ## J6: Plan the week's meals on the Schedule
 Actor: any

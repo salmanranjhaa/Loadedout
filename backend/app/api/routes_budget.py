@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
@@ -31,6 +31,20 @@ class BudgetCreate(BaseModel):
     category: str
     description: Optional[str] = None
     date_str: Optional[str] = None  # YYYY-MM-DD, defaults to today
+    # "card" = paid by credit card: counts as spending, but the cash is still in
+    # the account until the card bill is paid
+    payment_method: Literal["cash", "card"] = "cash"
+
+
+def _entry_dict(e: BudgetEntry) -> dict:
+    return {
+        "id": e.id,
+        "amount": e.amount,
+        "category": e.category,
+        "description": e.description,
+        "date": str(e.date),
+        "payment_method": e.payment_method or "cash",
+    }
 
 
 @router.post("/")
@@ -52,17 +66,12 @@ async def add_expense(
         category=body.category.lower(),
         description=body.description,
         date=entry_date,
+        payment_method=body.payment_method,
     )
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
-    return {
-        "id": entry.id,
-        "amount": entry.amount,
-        "category": entry.category,
-        "description": entry.description,
-        "date": str(entry.date),
-    }
+    return _entry_dict(entry)
 
 
 @router.get("/")
@@ -89,13 +98,7 @@ async def get_expenses(
     )
     entries = result.scalars().all()
     return {
-        "entries": [{
-            "id": e.id,
-            "amount": e.amount,
-            "category": e.category,
-            "description": e.description,
-            "date": str(e.date),
-        } for e in entries],
+        "entries": [_entry_dict(e) for e in entries],
         "total": round(sum(e.amount for e in entries), 2),
         "period": period,
     }

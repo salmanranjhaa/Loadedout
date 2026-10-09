@@ -14,5 +14,7 @@ class BudgetEntry(Base):
     category = Column(String(50), nullable=False)  # food, transport, uni, health, entertainment, shopping, other
     description = Column(String(255), nullable=True)
     date = Column(Date, nullable=False)
+    # How an expense was paid: "cash" (incl. debit) or "card" (credit card, still to pay)
+    payment_method = Column(String(10), nullable=False, server_default="cash")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

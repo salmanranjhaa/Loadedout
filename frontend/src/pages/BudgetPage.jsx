@@ -167,6 +167,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
   const [amount, setAmount] = useState("");
   const [desc, setDesc] = useState("");
   const [account, setAccount] = useState("");
+  const [paidWith, setPaidWith] = useState("cash"); // expenses only: "cash" or "card"
   const [saving, setSaving] = useState(false);
 
   function switchType(t) {
@@ -184,6 +185,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
         amount: parseFloat(amount),
         category: cat,
         description: parts.join(" ") || null,
+        payment_method: isIncome ? "cash" : paidWith,
       });
       onAdded();
       onClose();
@@ -197,7 +199,7 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(2px)" }} />
-      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "88vh", overflowY: "auto" }}>
+      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "calc(100% - 24px)", overflowY: "auto" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, margin: "0 auto 16px" }} />
 
         {/* Type toggle */}
@@ -234,6 +236,21 @@ function AddEntrySheet({ onClose, onAdded, cur }) {
         <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
           placeholder={isIncome ? "Source (e.g. Monthly salary, Freelance)" : "Description (e.g. Lidl groceries)"}
           style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
+
+        {/* Paid with (expenses only) */}
+        {!isIncome && (
+          <>
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", margin: "6px 0 8px" }}>Paid with</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              {[{ id: "cash", label: "Cash / debit" }, { id: "card", label: "Credit card" }].map(m => (
+                <button key={m.id} onClick={() => setPaidWith(m.id)} aria-pressed={paidWith === m.id}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: paidWith === m.id ? `${T.amber}22` : T.elevated, border: `1.5px solid ${paidWith === m.id ? T.amber : T.border}`, color: paidWith === m.id ? T.amber : T.textMuted, fontSize: 12, fontWeight: paidWith === m.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Bank account (income only) */}
         {isIncome && (
@@ -285,7 +302,11 @@ export default function BudgetPage({ profile, onProfile }) {
 
   const totalIncome = incomeEntries.reduce((s, e) => s + e.amount, 0);
   const totalExpenses = expenseEntries.reduce((s, e) => s + e.amount, 0);
-  const balance = totalIncome - totalExpenses;
+  const balance = totalIncome - totalExpenses; // after paying the card bill
+  // Credit-card spending is spent money, but it hasn't left the account yet:
+  // cash balance = income − cash spending; the card bill is still to pay.
+  const cardSpent = expenseEntries.filter(e => e.payment_method === "card").reduce((s, e) => s + e.amount, 0);
+  const cashBalance = totalIncome - (totalExpenses - cardSpent);
   const savingsPct = totalIncome > 0 ? Math.round((balance / totalIncome) * 100) : 0;
 
   const catData = expenseEntries.reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + e.amount; return acc; }, {});
@@ -323,6 +344,17 @@ export default function BudgetPage({ profile, onProfile }) {
               { label: "Income", value: `${cur} ${totalIncome.toFixed(0)}`, color: T.teal },
               { label: "Spent", value: `${cur} ${totalExpenses.toFixed(0)}`, color: T.negative },
               { label: "Saved", value: `${cur} ${Math.max(0, balance).toFixed(0)}`, color: "#5C8FFC" },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
+                <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+            {[
+              { label: "Cash balance", value: `${cashBalance >= 0 ? "+" : "−"}${cur} ${Math.abs(cashBalance).toFixed(2)}`, color: cashBalance >= 0 ? T.text : T.negative },
+              { label: "Card to pay", value: `${cur} ${cardSpent.toFixed(2)}`, color: cardSpent > 0 ? T.amber : T.textMuted },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
@@ -423,6 +455,9 @@ export default function BudgetPage({ profile, onProfile }) {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.description || cat.label}</div>
                           <div style={{ fontSize: 10, color: cat.color, background: cat.color + "18", borderRadius: 5, padding: "1px 6px", display: "inline-block", marginTop: 3, fontWeight: 600 }}>{cat.label}</div>
+                          {e.payment_method === "card" && (
+                            <div style={{ fontSize: 10, color: T.amber, background: T.amber + "18", borderRadius: 5, padding: "1px 6px", display: "inline-block", marginTop: 3, marginLeft: 6, fontWeight: 600 }}>Credit card</div>
+                          )}
                         </div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {e.amount.toFixed(2)}</div>
                       </div>

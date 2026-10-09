@@ -150,6 +150,31 @@ export default function App() {
     setShowFullProfile(false);
   }, [location.pathname]);
 
+  // On phones the on-screen keyboard shrinks the app, and the fixed tab bar
+  // rode up on top of it, covering form buttons (Add Income, Add to Pantry).
+  // Hide the bar while a text field has focus; --nav-h lets every sheet that
+  // reserves room for the bar take that space back.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    if (!window.matchMedia?.("(pointer: coarse)").matches) return; // desktop: no on-screen keyboard
+    const update = () => setTyping(!!document.activeElement?.matches?.(
+      'textarea, [contenteditable="true"], input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=time]):not([type=date]):not([type=file])'
+    ));
+    // focusout fires before the next field's focusin; check after both so
+    // moving between fields doesn't flash the bar.
+    const deferred = () => setTimeout(update, 0);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", deferred);
+    return () => {
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", deferred);
+    };
+  }, []);
+  useEffect(() => {
+    if (typing) document.documentElement.style.setProperty("--nav-h", "0px");
+    else document.documentElement.style.removeProperty("--nav-h");
+  }, [typing]);
+
   // 5-tap status bar easter egg
   function onStatusTap() {
     setNotchTaps((t) => {
@@ -303,6 +328,7 @@ export default function App() {
       {/* Bottom tab bar */}
       <nav
         style={{
+          display: typing ? "none" : undefined,
           position: "fixed",
           bottom: 0,
           left: "50%",

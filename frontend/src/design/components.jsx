@@ -635,7 +635,9 @@ export function Modal({ open, onClose, title, children, actions }) {
 }
 
 // ── Bottom Sheet ─────────────────────────────────────────────────────────────
-export function BottomSheet({ open, onClose, title, children, height = "auto" }) {
+// fill: keep the sheet at full height (search sheets), so the search box stays
+// put while results narrow and the list scrolls in the space that's left.
+export function BottomSheet({ open, onClose, title, children, fill = false }) {
   if (!open) return null;
   return (
     <div
@@ -663,7 +665,10 @@ export function BottomSheet({ open, onClose, title, children, height = "auto" })
           // Float the sheet above the fixed bottom nav so its action buttons are
           // never hidden behind it; the dark backdrop still fills the rest.
           marginBottom: T.navHeight,
-          maxHeight: height === "auto" ? "80vh" : height,
+          // % of the overlay, which shrinks with the on-screen keyboard; "80vh"
+          // stayed full-screen tall and pushed the sheet under the status bar.
+          height: fill ? `calc(90% - ${T.navHeight})` : undefined,
+          maxHeight: `calc(90% - ${T.navHeight})`,
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",

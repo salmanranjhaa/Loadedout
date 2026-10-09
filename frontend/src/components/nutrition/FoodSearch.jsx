@@ -223,7 +223,7 @@ function DatabaseTab({ onSelect }) {
   const online = onlineResults.filter((f) => !localNames.has(normName(f.name)));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
       <div style={{ position: "relative" }}>
         <Icon name="search" size={14} color={T.textDim} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
@@ -232,7 +232,7 @@ function DatabaseTab({ onSelect }) {
           style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px 10px 36px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
         />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "50vh", overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }}>
         {filtered.map((f) => <FoodRow key={f.name} food={f} onSelect={setSelected} />)}
 
         {query.trim().length >= 3 && (
@@ -290,7 +290,7 @@ function TemplatesTab({ onSelect }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
       <div style={{ position: "relative" }}>
         <Icon name="search" size={14} color={T.textDim} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
         <input
@@ -298,7 +298,7 @@ function TemplatesTab({ onSelect }) {
           style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px 10px 36px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
         />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "50vh", overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }}>
         {filtered.map((t) => (
           <button
             key={t.id || t.name}
@@ -483,7 +483,7 @@ function RecentTab({ onSelect }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "55vh", overflowY: "auto" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }}>
       {recent.map((m) => (
         <button
           key={m.id || m.name}
@@ -853,7 +853,9 @@ export default function FoodSearch({ onSelect }) {
   const [activeTab, setActiveTab] = useState("database");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, maxWidth: "100%" }}>
+    // flex + minHeight 0: fill the sheet so only the result list scrolls,
+    // with the tabs and search box pinned above it.
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, maxWidth: "100%", flex: 1, minHeight: 0 }}>
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 4, background: T.elevated, borderRadius: 10, padding: 3 }}>
         {TABS.map((tab) => (
