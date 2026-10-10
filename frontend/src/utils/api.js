@@ -264,6 +264,7 @@ export const workoutAPI = {
   save: (data) => request("/workout/", { method: "POST", body: JSON.stringify(data) }),
   getAll: (days) => request(`/workout/?days=${days || 30}`),
   getStats: () => request("/workout/stats"),
+  update: (id, data) => request(`/workout/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id) => request(`/workout/${id}`, { method: "DELETE" }),
   getTemplates: () => request("/workout/templates"),
   saveTemplate: (data) => request("/workout/templates", { method: "POST", body: JSON.stringify(data) }),
@@ -345,6 +346,7 @@ export const budgetAPI = {
   add: (data) => request("/budget/", { method: "POST", body: JSON.stringify(data) }),
   getAll: (period) => request(`/budget/?period=${period || "week"}`),
   getSummary: () => request("/budget/summary"),
+  update: (id, data) => request(`/budget/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id) => request(`/budget/${id}`, { method: "DELETE" }),
 };
 

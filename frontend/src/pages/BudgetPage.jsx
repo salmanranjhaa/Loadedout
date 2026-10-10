@@ -161,25 +161,36 @@ function WeekBarsChart({ bars, avg }) {
   );
 }
 
-// Unified add sheet — toggle between Expense, Income and Card bill at the top
-function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
-  const [entryType, setEntryType] = useState("expense");
+function entryTypeOf(category) {
+  return INCOME_CATS.some(c => c.id === category) ? "income" : category === CARD_PAYMENT.id ? "payment" : "expense";
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Add or edit sheet — toggle between Expense, Income and Card bill at the top.
+// Passing `entry` opens it on that transaction, with Save changes and Delete.
+function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0, entry = null }) {
+  const [entryType, setEntryType] = useState(entry ? entryTypeOf(entry.category) : "expense");
   const isIncome = entryType === "income";
   const isPayment = entryType === "payment";
   const cats = isIncome ? INCOME_CATS : EXPENSE_CATS;
-  const [cat, setCat] = useState("food");
-  const [amount, setAmount] = useState("");
-  const [desc, setDesc] = useState("");
+  const [cat, setCat] = useState(entry?.category || "food");
+  const [amount, setAmount] = useState(entry ? String(entry.amount) : "");
+  const [desc, setDesc] = useState(entry?.description || "");
   const [account, setAccount] = useState("");
-  const [paidWith, setPaidWith] = useState("cash"); // expenses only: "cash" or "card"
+  const [paidWith, setPaidWith] = useState(entry?.payment_method || "cash"); // expenses only: "cash" or "card"
+  const [day, setDay] = useState(entry?.date || todayISO());
   const [saving, setSaving] = useState(false);
 
   function switchType(t) {
     setEntryType(t);
     setCat(t === "income" ? "income" : t === "payment" ? CARD_PAYMENT.id : "food");
-    setDesc(""); setAccount("");
+    setAccount("");
     // Paying the card usually clears what's owed; start from that amount
-    if (t === "payment" && cardToPay > 0) setAmount(cardToPay.toFixed(2));
+    if (t === "payment" && cardToPay > 0 && !entry) setAmount(cardToPay.toFixed(2));
   }
 
   async function handleSave() {
@@ -187,16 +198,31 @@ function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
     setSaving(true);
     try {
       const parts = [desc.trim(), isIncome && account.trim() ? `(${account.trim()})` : ""].filter(Boolean);
-      await budgetAPI.add({
+      const data = {
         amount: parseFloat(amount),
         category: cat,
         description: parts.join(" ") || null,
         payment_method: entryType === "expense" ? paidWith : "cash",
-      });
+        date_str: day || todayISO(),
+      };
+      if (entry) await budgetAPI.update(entry.id, data);
+      else await budgetAPI.add(data);
       onAdded();
       onClose();
-      showToast(isIncome ? "Income added" : isPayment ? "Card payment recorded" : "Expense added", "success");
+      showToast(entry ? "Changes saved" : isIncome ? "Income added" : isPayment ? "Card payment recorded" : "Expense added", "success");
     } catch (e) { showToast(e?.message || "Failed to save", "error"); }
+    setSaving(false);
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete ${entry.description || getCat(entry.category).label} (${cur} ${entry.amount.toFixed(2)})?`)) return;
+    setSaving(true);
+    try {
+      await budgetAPI.delete(entry.id);
+      onAdded();
+      onClose();
+      showToast("Entry deleted", "success");
+    } catch (e) { showToast(e?.message || "Couldn't delete", "error"); }
     setSaving(false);
   }
 
@@ -207,6 +233,7 @@ function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(2px)" }} />
       <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "calc(100% - 24px)", overflowY: "auto" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, margin: "0 auto 16px" }} />
+        {entry && <div style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 14 }}>Edit entry</div>}
 
         {/* Type toggle */}
         <div style={{ display: "flex", background: T.elevated, borderRadius: 12, padding: 4, marginBottom: 18, gap: 4 }}>
@@ -222,7 +249,7 @@ function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
         {/* Amount — big centered input */}
         <div style={{ textAlign: "center", marginBottom: 18 }}>
           <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Amount ({cur})</div>
-          <input type="number" step="0.05" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus
+          <input type="number" step="0.05" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus={!entry}
             style={{ width: "100%", background: T.elevated, border: `2px solid ${amount ? accentColor + "88" : T.border}`, borderRadius: 14, padding: "14px 0", fontSize: 32, fontWeight: 800, color: accentColor, fontFamily: T.fontMono, outline: "none", textAlign: "center", boxSizing: "border-box", transition: "border-color 0.15s" }} />
         </div>
 
@@ -274,11 +301,25 @@ function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0 }) {
             style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
         )}
 
+        <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", margin: "6px 0 0" }}>
+          Date
+          <input type="date" value={day} max={todayISO()} onChange={e => setDay(e.target.value)}
+            style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", colorScheme: "dark" }} />
+        </label>
+
         <div style={{ height: 12 }} />
-        <button onClick={handleSave} disabled={saving || !amount || parseFloat(amount) <= 0}
-          style={{ width: "100%", padding: "14px 0", background: !amount || parseFloat(amount) <= 0 ? T.elevated : accentColor, color: !amount || parseFloat(amount) <= 0 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 13, fontSize: 15, fontWeight: 700, cursor: saving || !amount ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
-          {saving ? "Saving…" : isIncome ? "Add Income" : isPayment ? "Record card payment" : "Add Expense"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {entry && (
+            <button onClick={handleDelete} disabled={saving} aria-label="Delete entry" title="Delete"
+              style={{ width: 52, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name="trash" size={17} color={T.negative} />
+            </button>
+          )}
+          <button onClick={handleSave} disabled={saving || !amount || parseFloat(amount) <= 0}
+            style={{ flex: 1, padding: "14px 0", background: !amount || parseFloat(amount) <= 0 ? T.elevated : accentColor, color: !amount || parseFloat(amount) <= 0 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 13, fontSize: 15, fontWeight: 700, cursor: saving || !amount ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
+            {saving ? "Saving…" : entry ? "Save changes" : isIncome ? "Add Income" : isPayment ? "Record card payment" : "Add Expense"}
+          </button>
+        </div>
         {(!amount || parseFloat(amount) <= 0) && <Hint style={{ marginTop: 8 }}>Enter an amount above 0 to save.</Hint>}
       </div>
     </div>
@@ -290,6 +331,7 @@ export default function BudgetPage({ profile, onProfile }) {
   const [entries, setEntries] = useState([]);
   const [activeDonut, setActiveDonut] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [serverCardToPay, setServerCardToPay] = useState(null); // all months, from the server
@@ -461,7 +503,9 @@ export default function BudgetPage({ profile, onProfile }) {
                   {items.map(e => {
                     const cat = getCat(e.category);
                     return (
-                      <div key={e.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                      <div key={e.id} role="button" tabIndex={0} aria-label={`Edit ${e.description || cat.label}`}
+                        onClick={() => setEditEntry(e)} onKeyDown={(ev) => ev.key === "Enter" && setEditEntry(e)}
+                        style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
                         <div style={{ width: 36, height: 36, borderRadius: 10, background: cat.color + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           <Icon name={cat.icon} size={17} color={cat.color} />
                         </div>
@@ -473,6 +517,7 @@ export default function BudgetPage({ profile, onProfile }) {
                           )}
                         </div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {e.amount.toFixed(2)}</div>
+                        <Icon name="chev-right" size={14} color={T.textDim} />
                       </div>
                     );
                   })}
@@ -485,12 +530,14 @@ export default function BudgetPage({ profile, onProfile }) {
 
       <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} label="Add income or expense" />
       {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} cardToPay={cardToPay} />}
+      {editEntry && <AddEntrySheet key={editEntry.id} entry={editEntry} onClose={() => setEditEntry(null)} onAdded={reload} cur={cur} cardToPay={cardToPay} />}
       {selectedCategory && (
         <CategoryDetailPage
           currency={cur}
           category={selectedCategory}
           entries={expenseEntries.filter((e) => e.category === selectedCategory.id)}
           onBack={() => setSelectedCategory(null)}
+          onEdit={setEditEntry}
         />
       )}
     </div>

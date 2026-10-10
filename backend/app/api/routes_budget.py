@@ -36,6 +36,21 @@ class BudgetCreate(BaseModel):
     payment_method: Literal["cash", "card"] = "cash"
 
 
+class BudgetUpdate(BaseModel):
+    amount: Optional[Annotated[float, Field(gt=0)]] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    date_str: Optional[str] = None
+    payment_method: Optional[Literal["cash", "card"]] = None
+
+
+def _parse_date(raw: Optional[str]) -> date:
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date() if raw else date.today()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must look like 2026-10-09.")
+
+
 def _entry_dict(e: BudgetEntry) -> dict:
     return {
         "id": e.id,
@@ -66,16 +81,12 @@ async def add_expense(
     user: dict = Depends(get_current_user),
 ):
     """I log a new budget entry."""
-    entry_date = date.today()
-    if body.date_str:
-        entry_date = datetime.strptime(body.date_str, "%Y-%m-%d").date()
-
     entry = BudgetEntry(
         user_id=user["sub"],
         amount=round(body.amount, 2),
         category=body.category.lower(),
         description=body.description,
-        date=entry_date,
+        date=_parse_date(body.date_str),
         # Paying the card bill (and income) moves real cash; only purchases
         # can sit on the card.
         payment_method="cash" if body.category.lower() in NON_SPENDING_CATEGORIES else body.payment_method,
@@ -178,6 +189,35 @@ async def get_budget_summary(
         "this_month": {"total": round(sum(e.amount for e in month_entries), 2)},
         "category_colors": CATEGORY_COLORS,
     }
+
+
+@router.put("/{entry_id}")
+@limiter.limit("30/minute")
+async def update_expense(
+    request: Request,
+    entry_id: int,
+    body: BudgetUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I change an existing budget entry."""
+    result = await db.execute(
+        select(BudgetEntry).where(BudgetEntry.id == entry_id, BudgetEntry.user_id == user["sub"])
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if body.amount is not None: entry.amount = round(body.amount, 2)
+    if body.category is not None: entry.category = body.category.lower()
+    if "description" in body.model_fields_set: entry.description = body.description
+    if body.date_str is not None: entry.date = _parse_date(body.date_str)
+    if body.payment_method is not None: entry.payment_method = body.payment_method
+    # Same rule as adding: only purchases can sit on the card
+    if entry.category in NON_SPENDING_CATEGORIES:
+        entry.payment_method = "cash"
+    await db.commit()
+    await db.refresh(entry)
+    return _entry_dict(entry)
 
 
 @router.delete("/{entry_id}")

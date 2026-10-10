@@ -49,6 +49,18 @@ def test_budget_amount_must_be_positive():
     assert _rejected(lambda: BudgetCreate(amount=-5, category="food"))
 
 
+def test_edits_follow_the_same_rules():
+    from app.api.routes_budget import BudgetUpdate, _parse_date
+    from app.api.routes_workout import WorkoutUpdate
+    assert BudgetUpdate(description="Lidl").amount is None   # partial edits are fine
+    assert _rejected(lambda: BudgetUpdate(amount=0))
+    assert _rejected(lambda: BudgetUpdate(payment_method="crypto"))
+    assert _rejected(lambda: _parse_date("9.10.2026"))
+    assert str(_parse_date("2026-10-09")) == "2026-10-09"
+    assert WorkoutUpdate(duration_minutes=45).duration_minutes == 45
+    assert _rejected(lambda: WorkoutUpdate(duration_minutes=0))
+
+
 def test_card_to_pay_counts_card_purchases_minus_payments():
     from types import SimpleNamespace as E
     from app.api.routes_budget import card_outstanding

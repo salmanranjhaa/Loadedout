@@ -32,7 +32,7 @@ function inp() {
 }
 
 // ── Small template card (horizontal carousel) ─────────────────────────────────
-function TemplateCardSmall({ t, onStart }) {
+function TemplateCardSmall({ t, onStart, onEdit }) {
   const c = typeColor(t.workout_type);
   return (
     <div style={{ width: 220, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -46,9 +46,14 @@ function TemplateCardSmall({ t, onStart }) {
           <span key={m} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 7px" }}>{m}</span>
         ))}
       </div>
-      <button onClick={() => onStart(t)} style={{ marginTop: "auto", padding: "8px 0", background: T.elevated, color: T.text, border: `1px solid ${T.borderStrong}`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-        Start
-      </button>
+      <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+        <button aria-label={`Edit ${t.name}`} title="Edit" onClick={() => onEdit(t)} style={{ width: 36, flexShrink: 0, background: T.elevated, border: `1px solid ${T.borderStrong}`, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon name="edit" size={13} color={T.textMuted} />
+        </button>
+        <button onClick={() => onStart(t)} style={{ flex: 1, padding: "8px 0", background: T.elevated, color: T.text, border: `1px solid ${T.borderStrong}`, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+          Start
+        </button>
+      </div>
     </div>
   );
 }
@@ -365,7 +370,7 @@ function AIWorkoutLogger({ onClose, onRefresh }) {
 }
 
 // ── Template Browser ──────────────────────────────────────────────────────────
-function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
+function TemplateBrowser({ onClose, onStart, onEdit, apiTemplates = [] }) {
   const [filter, setFilter] = useState("all");
 
   // Only the user's own templates — created manually or saved from the AI coach.
@@ -377,6 +382,7 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
     exerciseIds:  [],
     exerciseObjs: t.exercises || [],
     source:       "api",
+    orig:         t,
   }));
 
   const allTemplates = [...apiMapped];
@@ -430,7 +436,12 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
                       <span key={name} style={{ fontSize: 9, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 5, padding: "2px 6px" }}>{name}</span>
                     ))}
                   </div>
-                  <button onClick={() => startTemplate(t)} style={{ marginTop: 4, padding: "8px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Start</button>
+                  <div style={{ marginTop: "auto", paddingTop: 4, display: "flex", gap: 6 }}>
+                    <button aria-label={`Edit ${t.name}`} title="Edit" onClick={() => onEdit(t.orig)} style={{ width: 34, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Icon name="edit" size={13} color={T.textMuted} />
+                    </button>
+                    <button onClick={() => startTemplate(t)} style={{ flex: 1, padding: "8px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Start</button>
+                  </div>
                 </div>
               );
             })}
@@ -441,11 +452,21 @@ function TemplateBrowser({ onClose, onStart, apiTemplates = [] }) {
   );
 }
 
-// ── New Template Modal ────────────────────────────────────────────────────────
-function NewTemplateModal({ onClose, onSaved }) {
-  const [name,       setName]       = useState("");
-  const [type,       setType]       = useState("strength");
-  const [exercises,  setExercises]  = useState([]);
+// Templates saved while offline live only on this device (id "local-…")
+const isLocalTemplate = (t) => String(t?.id || "").startsWith("local-");
+
+function updateLocalTemplates(fn) {
+  const local = JSON.parse(localStorage.getItem("lo_custom_templates") || "[]");
+  localStorage.setItem("lo_custom_templates", JSON.stringify(fn(local)));
+}
+
+// ── New / Edit Template Modal ─────────────────────────────────────────────────
+function NewTemplateModal({ onClose, onSaved, template = null }) {
+  const [name,       setName]       = useState(template?.name || "");
+  const [type,       setType]       = useState(template?.workout_type || "strength");
+  const [exercises,  setExercises]  = useState(
+    (template?.exercises || []).map((e) => (typeof e === "string" ? { name: e } : e)).filter((e) => e?.name)
+  );
   const [showPicker, setShowPicker] = useState(false);
   const [saving,     setSaving]     = useState(false);
 
@@ -461,12 +482,22 @@ function NewTemplateModal({ onClose, onSaved }) {
     if (!name.trim()) { showToast("Give your template a name", "error"); return; }
     if (exercises.length === 0) { showToast("Add at least one exercise", "error"); return; }
     setSaving(true);
+    const data = { name: name.trim(), workout_type: type, exercises: exercises.map((e) => ({ name: e.name })) };
+    if (template) {
+      try {
+        if (isLocalTemplate(template)) updateLocalTemplates((all) => all.map((t) => (t.id === template.id ? { ...t, ...data } : t)));
+        else await workoutAPI.updateTemplate(template.id, data);
+        showToast("Template updated", "success");
+        onSaved?.();
+        onClose();
+      } catch (e) {
+        showToast(e?.message || "Couldn't update the template", "error");
+      }
+      setSaving(false);
+      return;
+    }
     try {
-      await workoutAPI.saveTemplate({
-        name: name.trim(),
-        workout_type: type,
-        exercises: exercises.map((e) => ({ name: e.name })),
-      });
+      await workoutAPI.saveTemplate(data);
       onSaved?.();
       onClose();
     } catch {
@@ -476,6 +507,21 @@ function NewTemplateModal({ onClose, onSaved }) {
       localStorage.setItem("lo_custom_templates", JSON.stringify(local));
       onSaved?.();
       onClose();
+    }
+    setSaving(false);
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete the template ${template.name}?`)) return;
+    setSaving(true);
+    try {
+      if (isLocalTemplate(template)) updateLocalTemplates((all) => all.filter((t) => t.id !== template.id));
+      else await workoutAPI.deleteTemplate(template.id);
+      showToast("Template deleted", "success");
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      showToast(e?.message || "Couldn't delete the template", "error");
     }
     setSaving(false);
   }
@@ -490,7 +536,7 @@ function NewTemplateModal({ onClose, onSaved }) {
 
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>New Template</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{template ? "Edit Template" : "New Template"}</div>
             <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Icon name="x" size={14} color={T.textMuted} /></button>
           </div>
 
@@ -543,14 +589,22 @@ function NewTemplateModal({ onClose, onSaved }) {
             Add Exercise
           </button>
 
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{ padding: "13px 0", background: saving ? T.elevated : T.teal, color: saving ? T.textMuted : "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
-          >
-            {saving ? "Saving…" : "Save Template"}
-          </button>
+          {/* Save (and delete when editing) */}
+          <div style={{ display: "flex", gap: 8 }}>
+            {template && (
+              <button aria-label="Delete template" title="Delete" onClick={handleDelete} disabled={saving}
+                style={{ width: 52, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: T.rCard, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="trash" size={17} color={T.negative} />
+              </button>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{ flex: 1, padding: "13px 0", background: saving ? T.elevated : T.teal, color: saving ? T.textMuted : "#0A0A0F", border: "none", borderRadius: T.rCard, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {saving ? "Saving…" : template ? "Save changes" : "Save Template"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -573,6 +627,7 @@ export default function WorkoutPage({ profile, onProfile }) {
   const [showBrowser,     setShowBrowser]  = useState(false);
   const [showAILogger,    setShowAILogger] = useState(false);
   const [showNewTemplate, setShowNewTpl]   = useState(false);
+  const [editTemplate,    setEditTpl]      = useState(null);
   const [liveSession,     setLiveSession]  = useState(false);
   const [liveTemplate,    setLiveTemplate] = useState(null);
   const [sessionKey,      setSessionKey]   = useState(0);
@@ -746,7 +801,7 @@ export default function WorkoutPage({ profile, onProfile }) {
             <><SkeletonCard /><SkeletonCard /></>
           ) : templates.length > 0 ? (
             templates.slice(0, 6).map((t) => (
-              <TemplateCardSmall key={t.id} t={t} onStart={startSession} />
+              <TemplateCardSmall key={t.id} t={t} onStart={startSession} onEdit={setEditTpl} />
             ))
           ) : (
             <div style={{ fontSize: 13, color: T.textDim, padding: "20px 0" }}>
@@ -758,7 +813,7 @@ export default function WorkoutPage({ profile, onProfile }) {
         <div style={{ padding: "0 20px 16px" }}>
           <SectionHead title="Recent Workouts" />
         </div>
-        <WorkoutHistory history={history} loading={loading} onSelect={() => {}} />
+        <WorkoutHistory history={history} loading={loading} onChanged={refresh} />
       </PageScroll>
 
       <SpeedDialFAB
@@ -771,6 +826,7 @@ export default function WorkoutPage({ profile, onProfile }) {
         <TemplateBrowser
           onClose={() => setShowBrowser(false)}
           onStart={(t) => { setShowBrowser(false); startSession(t); }}
+          onEdit={(t) => { setShowBrowser(false); setEditTpl(t); }}
           apiTemplates={templates}
         />
       )}
@@ -792,6 +848,10 @@ export default function WorkoutPage({ profile, onProfile }) {
 
       {showNewTemplate && (
         <NewTemplateModal onClose={() => setShowNewTpl(false)} onSaved={refresh} />
+      )}
+
+      {editTemplate && (
+        <NewTemplateModal key={editTemplate.id} template={editTemplate} onClose={() => setEditTpl(null)} onSaved={refresh} />
       )}
 
       {liveSession && (
