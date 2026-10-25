@@ -1,13 +1,17 @@
 """
 Loadout MCP Server
 
-I expose tools so Claude Cowork (or any MCP client) can read and write
-directly into the Loadout PostgreSQL database on behalf of a user.
+I expose tools so Claude (or any MCP client) can read and write directly into
+the Loadout PostgreSQL database on behalf of one user.
 
-Connect via SSE at: http://<VM_IP>:8003/sse
+Connect over Streamable HTTP at https://loadedout.online/mcp/?key=<personal key>
+(or send the key as "Authorization: Bearer <key>"). The key decides whose data
+the tools touch; create and revoke keys with keys.py.
 """
 
 import asyncio
+import contextlib
+import hashlib
 import json
 import os
 from datetime import date as date_cls, datetime, time as time_cls
@@ -15,12 +19,12 @@ from typing import Any, Optional
 
 import asyncpg
 from mcp.server import Server
-from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import Response
-from starlette.routing import Mount, Route
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 import uvicorn
 
 # I read credentials from environment, falling back to defaults for local dev
@@ -40,14 +44,25 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
-async def resolve_user_id(conn: asyncpg.Connection, email: str) -> int:
-    """I look up the user id by email, raising a clear error if not found."""
-    row = await conn.fetchrow(
-        "SELECT id FROM users WHERE email = $1 AND is_active = true", email
-    )
-    if not row:
-        raise ValueError(f"No active user found with email: {email}")
-    return row["id"]
+def hash_key(key: str) -> str:
+    """Keys are long random strings, so a plain SHA-256 is enough to store them."""
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+async def user_for_key(key: str) -> Optional[int]:
+    """I return the user a live (not revoked) key belongs to, and note its use."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            """
+            UPDATE mcp_keys k SET last_used_at = now()
+            FROM users u
+            WHERE k.key_hash = $1 AND k.revoked_at IS NULL
+              AND u.id = k.user_id AND u.is_active = true
+            RETURNING k.user_id
+            """,
+            hash_key(key),
+        )
 
 
 def _serialize(val: Any) -> Any:
@@ -89,9 +104,8 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string", "description": "The user's email address"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -104,7 +118,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "current_weight_kg": {"description": "numeric"},
                     "target_weight_kg": {"description": "numeric"},
                     "height_cm": {"description": "numeric"},
@@ -135,7 +148,7 @@ async def list_tools() -> list[Tool]:
                         ),
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -149,7 +162,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "day_of_week": {
                         "description": "numeric value",
                         "minimum": 0,
@@ -161,7 +173,7 @@ async def list_tools() -> list[Tool]:
                         "description": "YYYY-MM-DD, returns events for that weekday",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -175,7 +187,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "title": {"type": "string"},
                     "event_type": {
                         "type": "string",
@@ -205,7 +216,7 @@ async def list_tools() -> list[Tool]:
                         "description": "Extra metadata (meal details, exercise type, etc.)",
                     },
                 },
-                "required": ["user_email", "title", "event_type", "start_time", "end_time"],
+                "required": ["title", "event_type", "start_time", "end_time"],
             },
         ),
         Tool(
@@ -214,7 +225,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "event_id": {"description": "numeric"},
                     "title": {"type": "string"},
                     "start_time": {"type": "string", "description": "HH:MM"},
@@ -229,7 +239,7 @@ async def list_tools() -> list[Tool]:
                         "description": "Why the event is being changed (logged for AI pattern learning)",
                     },
                 },
-                "required": ["user_email", "event_id"],
+                "required": ["event_id"],
             },
         ),
         Tool(
@@ -238,11 +248,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "event_id": {"description": "numeric"},
                     "reason": {"type": "string"},
                 },
-                "required": ["user_email", "event_id"],
+                "required": ["event_id"],
             },
         ),
         Tool(
@@ -254,13 +263,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "meal_type": {
                         "type": "string",
                         "enum": ["breakfast", "lunch", "dinner", "snack"],
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -272,7 +280,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "name": {"type": "string"},
                     "meal_type": {
                         "type": "string",
@@ -294,7 +301,7 @@ async def list_tools() -> list[Tool]:
                     "prep_instructions": {"type": "string"},
                     "prep_time_minutes": {"description": "numeric"},
                 },
-                "required": ["user_email", "name", "meal_type", "calories", "protein_g", "ingredients"],
+                "required": ["name", "meal_type", "calories", "protein_g", "ingredients"],
             },
         ),
         Tool(
@@ -303,7 +310,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "template_id": {"description": "numeric"},
                     "name": {"type": "string"},
                     "calories": {"description": "numeric"},
@@ -316,7 +322,7 @@ async def list_tools() -> list[Tool]:
                     "prep_time_minutes": {"description": "numeric"},
                     "is_active": {"type": "boolean"},
                 },
-                "required": ["user_email", "template_id"],
+                "required": ["template_id"],
             },
         ),
         Tool(
@@ -328,7 +334,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "meal_type": {
                         "type": "string",
                         "enum": ["breakfast", "lunch", "dinner", "snack"],
@@ -349,7 +354,7 @@ async def list_tools() -> list[Tool]:
                         "items": {"type": "object"},
                     },
                 },
-                "required": ["user_email", "meal_type", "name", "calories", "protein_g"],
+                "required": ["meal_type", "name", "calories", "protein_g"],
             },
         ),
         Tool(
@@ -358,13 +363,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "date": {
                         "type": "string",
                         "description": "YYYY-MM-DD, defaults to today",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -376,13 +380,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "date": {
                         "type": "string",
                         "description": "YYYY-MM-DD, defaults to today",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -391,14 +394,13 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "category": {
                         "type": "string",
                         "enum": ["protein", "produce", "grains", "dairy", "pantry", "other"],
                         "description": "Optional category filter",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -411,7 +413,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "name": {"type": "string"},
                     "quantity": {"description": "numeric"},
                     "unit": {
@@ -423,7 +424,7 @@ async def list_tools() -> list[Tool]:
                         "enum": ["protein", "produce", "grains", "dairy", "pantry", "other"],
                     },
                 },
-                "required": ["user_email", "name", "quantity", "unit", "category"],
+                "required": ["name", "quantity", "unit", "category"],
             },
         ),
         Tool(
@@ -432,14 +433,13 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "item_id": {"description": "numeric"},
                     "name": {"type": "string"},
                     "quantity": {"description": "numeric"},
                     "unit": {"type": "string"},
                     "category": {"type": "string"},
                 },
-                "required": ["user_email", "item_id"],
+                "required": ["item_id"],
             },
         ),
         Tool(
@@ -448,10 +448,9 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "item_id": {"description": "numeric"},
                 },
-                "required": ["user_email", "item_id"],
+                "required": ["item_id"],
             },
         ),
         Tool(
@@ -470,7 +469,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "workout_type": {"type": "string"},
                     "name": {"type": "string", "description": "Optional session title, e.g. 'Push Day'"},
                     "duration_minutes": {"description": "numeric"},
@@ -489,7 +487,7 @@ async def list_tools() -> list[Tool]:
                     "energy_level": { "minimum": 1, "maximum": 10},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                 },
-                "required": ["user_email", "workout_type", "duration_minutes", "intensity"],
+                "required": ["workout_type", "duration_minutes", "intensity"],
             },
         ),
         Tool(
@@ -498,10 +496,9 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "days": { "default": 30},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -510,9 +507,8 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -526,7 +522,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "amount": {"description": "numeric"},
                     "category": {
                         "type": "string",
@@ -536,7 +531,7 @@ async def list_tools() -> list[Tool]:
                     "description": {"type": "string"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                 },
-                "required": ["user_email", "amount", "category"],
+                "required": ["amount", "category"],
             },
         ),
         Tool(
@@ -545,14 +540,13 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "period": {
                         "type": "string",
                         "description": "'week', 'month', or number of days e.g. '14'",
                         "default": "week",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -561,9 +555,8 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -572,10 +565,9 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "log_id": {"description": "numeric ID of the meal log entry"},
                 },
-                "required": ["user_email", "log_id"],
+                "required": ["log_id"],
             },
         ),
         Tool(
@@ -587,13 +579,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "within_days": {
                         "description": "numeric, default 3 — items expiring within this many days",
                         "default": 3,
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -602,12 +593,11 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "weight_kg": {"description": "numeric, weight in kg"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                     "notes": {"type": "string"},
                 },
-                "required": ["user_email", "weight_kg"],
+                "required": ["weight_kg"],
             },
         ),
         Tool(
@@ -616,10 +606,9 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "days": {"description": "numeric, default 90"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -628,13 +617,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "workout_type": {
                         "type": "string",
                         "description": "Optional filter: crossfit, running, cycling, hyrox, strength, other",
                     },
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -646,7 +634,6 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "name": {"type": "string"},
                     "workout_type": {"type": "string"},
                     "estimated_duration": {"description": "numeric minutes"},
@@ -657,7 +644,7 @@ async def list_tools() -> list[Tool]:
                         "description": '[{"name": "Pull-ups", "sets": 4, "reps": 8, "rest_seconds": 90}]',
                     },
                 },
-                "required": ["user_email", "name", "workout_type", "exercises"],
+                "required": ["name", "workout_type", "exercises"],
             },
         ),
         Tool(
@@ -670,10 +657,9 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "days": {"description": "numeric, lookback window, default 90"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -686,13 +672,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "supplements": {
                         "type": "object",
                         "description": '{"morning": ["Vitamin D", "Omega-3"], "post_workout": ["Whey Protein", "Creatine"]}',
                     },
                 },
-                "required": ["user_email", "supplements"],
+                "required": ["supplements"],
             },
         ),
         Tool(
@@ -701,9 +686,8 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                 },
-                "required": ["user_email"],
+                "required": [],
             },
         ),
         Tool(
@@ -715,14 +699,13 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_email": {"type": "string"},
                     "exercise_name": {"type": "string"},
                     "weight_kg": {"description": "numeric"},
                     "reps": {"description": "numeric"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                     "notes": {"type": "string"},
                 },
-                "required": ["user_email", "exercise_name", "weight_kg", "reps"],
+                "required": ["exercise_name", "weight_kg", "reps"],
             },
         ),
     ]
@@ -732,10 +715,13 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    # The key was checked before the request reached MCP (KeyAuthEndpoint);
+    # the tools act only as its user, whatever the arguments say.
+    user_id = server.request_context.request.state.mcp_user_id
     pool = await get_pool()
     async with pool.acquire() as conn:
         try:
-            result = await _dispatch(name, arguments, conn)
+            result = await _dispatch(name, arguments, conn, user_id)
             return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
         except ValueError as e:
             return [TextContent(type="text", text=f"Error: {e}")]
@@ -743,10 +729,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"Unexpected error: {e}")]
 
 
-async def _dispatch(name: str, args: dict, conn: asyncpg.Connection) -> Any:
-    email = args["user_email"]
-    user_id = await resolve_user_id(conn, email)
-
+async def _dispatch(name: str, args: dict, conn: asyncpg.Connection, user_id: int) -> Any:
     if name == "get_profile":
         return await _get_profile(conn, user_id)
 
@@ -1795,31 +1778,53 @@ async def _upsert_personal_record(conn: asyncpg.Connection, user_id: int, args: 
     return {"status": "created", "exercise_name": args["exercise_name"], "weight_kg": weight, "reps": reps}
 
 
-# ---- Starlette ASGI app with SSE transport ----
+# ---- Starlette ASGI app: Streamable HTTP behind a personal key ----
+
+def key_from(request: Request) -> Optional[str]:
+    """The key comes as "Authorization: Bearer <key>" or, for clients that only
+    take a URL (Claude's custom connector form), as ?key=<key>."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip() or None
+    return request.query_params.get("key") or None
+
+
+class KeyAuthEndpoint:
+    """I refuse any request without a live key and tell the MCP handler whose
+    key it was (read back in call_tool)."""
+
+    def __init__(self, session_manager: StreamableHTTPSessionManager):
+        self.session_manager = session_manager
+
+    async def __call__(self, scope, receive, send):
+        key = key_from(Request(scope))
+        user_id = await user_for_key(key) if key else None
+        if user_id is None:
+            response = JSONResponse({"error": "A valid Loaded Out MCP key is required."}, status_code=401)
+            await response(scope, receive, send)
+            return
+        scope.setdefault("state", {})["mcp_user_id"] = user_id
+        await self.session_manager.handle_request(scope, receive, send)
+
 
 def build_app() -> Starlette:
-    # I use the full /mcp/messages/ path so Claude's app knows the correct POST URL
-    # when connecting through the Caddy reverse proxy at loadedout.online/mcp/*
-    sse = SseServerTransport("/mcp/messages/")
+    # Stateless: every request is checked against its own key, so there is no
+    # session to take over, and plain JSON replies (no stream needed per call).
+    session_manager = StreamableHTTPSessionManager(app=server, stateless=True, json_response=True)
 
-    async def handle_sse(request: Request) -> Response:
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await server.run(
-                streams[0], streams[1], server.create_initialization_options()
-            )
-        return Response()
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with session_manager.run():
+            yield
 
+    # Caddy forwards loadedout.online/mcp/* here; /mcp/ is the one endpoint.
     return Starlette(
-        routes=[
-            Route("/mcp/sse", endpoint=handle_sse),
-            Mount("/mcp/messages/", app=sse.handle_post_message),
-        ]
+        routes=[Route("/mcp/", endpoint=KeyAuthEndpoint(session_manager), methods=["GET", "POST", "DELETE"])],
+        lifespan=lifespan,
     )
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("MCP_PORT", "8003"))
-    app = build_app()
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # No access log: the key can be in the URL, and URLs should not end up in logs.
+    uvicorn.run(build_app(), host="0.0.0.0", port=port, access_log=False)
