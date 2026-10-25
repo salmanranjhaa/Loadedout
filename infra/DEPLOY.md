@@ -46,7 +46,7 @@ container is named `infra-<service>-1`.
 |---|---|---|---|
 | `frontend` | `infra-frontend-1` | Caddy + built React SPA | **host `:80` and `:443`** |
 | `backend` | `infra-backend-1` | FastAPI / uvicorn | internal `:8000` |
-| `mcp` | `infra-mcp-1` | MCP server | internal `:8003` |
+| `mcp` | `infra-mcp-1` | MCP server | internal `:8003`, public at `/mcp/` via Caddy (key required) |
 | `db` | `infra-db-1` | `pgvector/pgvector:pg16` | internal `:5432` |
 | `mongo` | `infra-mongo-1` | `mongo:7` | internal `:27017` |
 
@@ -130,6 +130,23 @@ docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:alpine \
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend alembic upgrade head
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend alembic current
 ```
+
+### MCP keys (Claude connector)
+
+The MCP server speaks Streamable HTTP at `https://loadedout.online/mcp/` and
+refuses every request without a personal key. A key decides whose data the
+tools touch; only its SHA-256 is stored, in `mcp_keys`.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec mcp python keys.py create you@example.com "Claude"
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec mcp python keys.py list
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec mcp python keys.py revoke you@example.com
+```
+
+`create` prints the connector URL (`https://loadedout.online/mcp/?key=…`) once;
+paste it into Claude → Settings → Connectors → Add custom connector. A lost or
+leaked key cannot be shown again: revoke it and create a new one. The server
+keeps no access log, so keys in URLs are not written to disk.
 
 ---
 
