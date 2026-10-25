@@ -137,6 +137,11 @@ The MCP server speaks Streamable HTTP at `https://loadedout.online/mcp/` and
 refuses every request without a personal key. A key decides whose data the
 tools touch; only its SHA-256 is stored, in `mcp_keys`.
 
+Users make their own: **Profile → Connected services → Claude → Create link**
+shows the link once, lists their links with when each was last used, and
+revokes them (`/api/v1/user/mcp-keys`, at most 5 live links per user). The
+script below does the same from the server, for support:
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec mcp python keys.py create you@example.com "Claude"
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec mcp python keys.py list

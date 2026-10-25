@@ -1,10 +1,133 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
 import {
   PageScroll, SettingsRow, SettingsGroup,
 } from "../design/components";
 import { userAPI } from "../utils/api";
+import { showToast } from "../utils/toast";
+
+// ── Claude connector: personal links to the Loaded Out MCP server ─────────────
+const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+function ClaudeConnector() {
+  const [open, setOpen] = useState(false);
+  const [keys, setKeys] = useState(null);       // live links, null until loaded
+  const [label, setLabel] = useState("");
+  const [created, setCreated] = useState(null); // the new link, shown once
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function load() {
+    try { setKeys((await userAPI.mcpKeys()).keys); } catch { setKeys([]); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function create() {
+    setBusy(true);
+    try {
+      setCreated(await userAPI.createMcpKey(label.trim() || undefined));
+      setLabel("");
+      setCopied(false);
+      load();
+    } catch (e) {
+      showToast(e?.message || "Couldn't create a link", "error");
+    }
+    setBusy(false);
+  }
+
+  async function revoke(k) {
+    if (!window.confirm(`Revoke "${k.label}"? Claude loses access through this link straight away.`)) return;
+    try {
+      await userAPI.revokeMcpKey(k.id);
+      if (created?.id === k.id) setCreated(null);
+      showToast("Link revoked", "success");
+      load();
+    } catch (e) {
+      showToast(e?.message || "Couldn't revoke the link", "error");
+    }
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(created.url);
+      setCopied(true);
+    } catch {
+      showToast("Couldn't copy. Press and hold the link to copy it.", "error");
+    }
+  }
+
+  const count = keys?.length || 0;
+  const field = { width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 12px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <>
+      <button onClick={() => setOpen(!open)} aria-expanded={open}
+        style={{ width: "100%", padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: T.elevated2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon name="sparkle" size={14} color={T.textMuted} />
+        </div>
+        <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Claude</span>
+        <span style={{ fontSize: 11, color: count ? T.teal : T.textDim, fontWeight: 600 }}>
+          {keys === null ? "" : count ? `${count} link${count === 1 ? "" : "s"}` : "Not connected"}
+        </span>
+        <Icon name="chev-right" size={14} color={T.textMuted} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+
+      {open && (
+        <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>
+            Let Claude read and log your meals, workouts, budget, pantry and schedule. Create a link, then in Claude open
+            <b style={{ color: T.text }}> Settings → Connectors → Add custom connector</b> and paste it as the URL.
+          </div>
+
+          {created && (
+            <div style={{ background: T.elevated, border: `1px solid ${T.teal}55`, borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.teal }}>Your new link for "{created.label}"</div>
+              <input readOnly value={created.url} onFocus={(e) => e.target.select()} aria-label="Claude connector link"
+                style={{ ...field, fontFamily: T.fontMono, fontSize: 11 }} />
+              <button onClick={copy}
+                style={{ padding: "10px 0", background: T.teal, color: "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                {copied ? "Copied" : "Copy link"}
+              </button>
+              <div style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.45 }}>
+                Copy it now: it is shown only once. Anyone with this link can use your Loaded Out data, so keep it private.
+              </div>
+            </div>
+          )}
+
+          {count > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {keys.map((k) => (
+                <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.elevated, borderRadius: 10, padding: "8px 10px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{k.label}</div>
+                    <div style={{ fontSize: 11, color: T.textDim }}>
+                      Created {shortDate(k.created_at)} · {k.last_used_at ? `last used ${shortDate(k.last_used_at)}` : "not used yet"}
+                    </div>
+                  </div>
+                  <button onClick={() => revoke(k)}
+                    style={{ padding: "6px 10px", background: "transparent", border: `1px solid ${T.negative}66`, borderRadius: 8, color: T.negative, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={100} placeholder="Name, e.g. Claude on my laptop"
+              aria-label="Link name" style={{ ...field, flex: 1 }} />
+            <button onClick={create} disabled={busy}
+              style={{ padding: "0 14px", background: busy ? T.elevated2 : T.teal, color: busy ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              {busy ? "Creating…" : "Create link"}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 // ── Gamification helpers ───────────────────────────────────────────────────────
 function getWorkoutStats() {
@@ -382,7 +505,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
 
         {/* Connected services */}
         <SettingsGroup title="Connected services">
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
             <div style={{
               width: 28, height: 28, borderRadius: 8, background: T.elevated2,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -394,6 +517,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
               {p.google_connected ? "Connected" : "Not connected"}
             </span>
           </div>
+          <ClaudeConnector />
         </SettingsGroup>
 
         {/* Preferences */}

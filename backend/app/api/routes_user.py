@@ -1,17 +1,21 @@
 import base64
 import binascii
+import hashlib
+import secrets
 from datetime import datetime, timezone
 
 from bson import Binary, ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
+from sqlalchemy import func, select
+from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
 from app.core.mongo import get_mongo_db
+from app.models.mcp_key import McpKey
 from app.models.user import User
 
 router = APIRouter(prefix="/user", tags=["user"])
@@ -290,3 +294,90 @@ async def update_supplements(
     u.supplements = [s.model_dump() for s in body]
     await db.commit()
     return {"updated": True, "count": len(body)}
+
+
+# ---- Claude connector links (personal keys for the MCP server) ----
+
+MCP_MAX_LIVE_KEYS = 5
+
+
+def hash_mcp_key(key: str) -> str:
+    """Must match hash_key in mcp/server.py, which checks the keys."""
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+class McpKeyCreate(BaseModel):
+    label: Optional[str] = Field(None, max_length=100)
+
+
+def _mcp_key_dict(k: McpKey) -> dict:
+    return {
+        "id": k.id,
+        "label": k.label,
+        "created_at": k.created_at.isoformat() if k.created_at else None,
+        "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+    }
+
+
+@router.get("/mcp-keys")
+@limiter.limit("60/minute")
+async def list_mcp_keys(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I list the user's live Claude links (never the keys themselves)."""
+    result = await db.execute(
+        select(McpKey)
+        .where(McpKey.user_id == user["sub"], McpKey.revoked_at.is_(None))
+        .order_by(McpKey.created_at.desc(), McpKey.id.desc())
+    )
+    return {"keys": [_mcp_key_dict(k) for k in result.scalars().all()]}
+
+
+@router.post("/mcp-keys")
+@limiter.limit("10/minute")
+async def create_mcp_key(
+    request: Request,
+    body: McpKeyCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I create a Claude link. The URL holds the key and is returned only here:
+    only its SHA-256 is stored, so it can't be shown again."""
+    live = await db.scalar(
+        select(func.count()).select_from(McpKey)
+        .where(McpKey.user_id == user["sub"], McpKey.revoked_at.is_(None))
+    )
+    if live >= MCP_MAX_LIVE_KEYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already have {MCP_MAX_LIVE_KEYS} Claude links. Revoke one you no longer use first.",
+        )
+    key = "lo_" + secrets.token_urlsafe(32)
+    row = McpKey(user_id=user["sub"], key_hash=hash_mcp_key(key), label=(body.label or "").strip() or "Claude")
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    base = get_settings().APP_PUBLIC_URL.rstrip("/")
+    return {**_mcp_key_dict(row), "url": f"{base}/mcp/?key={key}"}
+
+
+@router.delete("/mcp-keys/{key_id}")
+@limiter.limit("30/minute")
+async def revoke_mcp_key(
+    request: Request,
+    key_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """I switch a Claude link off for good; Claude loses access straight away."""
+    result = await db.execute(
+        select(McpKey).where(McpKey.id == key_id, McpKey.user_id == user["sub"], McpKey.revoked_at.is_(None))
+    )
+    k = result.scalar_one_or_none()
+    if not k:
+        raise HTTPException(status_code=404, detail="Link not found")
+    k.revoked_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"revoked": key_id}

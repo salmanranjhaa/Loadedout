@@ -380,6 +380,10 @@ export const userAPI = {
     request("/user/avatar", { method: "POST", body: JSON.stringify({ image_base64, mime_type }) }),
   getAvatar: () => request("/user/avatar"),
   deleteAvatar: () => request("/user/avatar", { method: "DELETE" }),
+  // Claude connector links (personal MCP keys)
+  mcpKeys: () => request("/user/mcp-keys"),
+  createMcpKey: (label) => request("/user/mcp-keys", { method: "POST", body: JSON.stringify({ label }) }),
+  revokeMcpKey: (id) => request(`/user/mcp-keys/${id}`, { method: "DELETE" }),
 };
 
 export const chatAPI = {
