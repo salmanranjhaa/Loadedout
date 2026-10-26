@@ -521,44 +521,59 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="log_expense",
             description=(
-                "Log a budget entry. Expense categories: food, rent, transport, fitness, fun, other; "
-                "use income or savings for money coming in, and card_payment for paying off the "
-                "credit card bill (not spending; the purchases were already logged). "
-                "payment_method: cash (default, includes debit) or card (credit card)."
+                "Log a budget entry on one of the user's accounts (see get_accounts). Spending "
+                "categories: food, rent, transport, fitness, fun, other; income or savings for money "
+                "coming in. To move money between two accounts (paying the credit card bill, topping "
+                "up another account) use category transfer with account = where it leaves and "
+                "to_account = where it arrives; paying into a credit card is stored as card_payment. "
+                "Transfers are not spending. A date after today is scheduled: it changes the "
+                "balances only once that day comes."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "amount": {"description": "numeric"},
-                    "category": {
-                        "type": "string",
-                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "card_payment"],
-                    },
-                    "payment_method": {"type": "string", "enum": ["cash", "card"]},
-                    "description": {"type": "string"},
+                    "amount": {"description": "numeric, above 0"},
+                    "category": {"type": "string", "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "transfer", "card_payment"]},
+                    "account": {"description": "account name or ID the money leaves (or arrives in, for income)"},
+                    "to_account": {"description": "transfers only: account name or ID the money arrives in"},
+                    "description": {"type": "string", "description": "merchant or note, without the account name"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
+                    "payment_method": {
+                        "type": "string", "enum": ["cash", "card"],
+                        "description": "only without account: card = the first credit card, cash = the first bank account",
+                    },
                 },
                 "required": ["amount", "category"],
             },
         ),
         Tool(
             name="get_expenses",
-            description="Get budget entries for a period: 'week', 'month', or a number of days as string.",
+            description=(
+                "Get budget entries with their IDs and accounts, newest first, for a period or one "
+                "month, optionally for one account (entries paid from or into it). Scheduled "
+                "(future-dated) entries are included and marked."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "period": {
                         "type": "string",
-                        "description": "'week', 'month', or number of days e.g. '14'",
+                        "description": "'week', 'month', 'all', or number of days e.g. '14'",
                         "default": "week",
                     },
+                    "month": {"type": "string", "description": "YYYY-MM; overrides period"},
+                    "account": {"description": "account name or ID"},
                 },
                 "required": [],
             },
         ),
         Tool(
             name="get_budget_summary",
-            description="Get aggregated budget stats: this week, last week, this month, broken down by category.",
+            description=(
+                "Get spending stats (transfers and income are not spending): this week, last week, "
+                "this month by category against the category budgets, and income vs spending for "
+                "each of the last 6 months. Balances are in get_accounts."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -719,18 +734,17 @@ async def list_tools() -> list[Tool]:
             name="update_expense",
             description=(
                 "Change a budget entry by its ID (from get_expenses). Send only what changes. "
-                "Income, savings and card_payment entries are always cash."
+                "account moves it to another account; for transfers, to_account changes where the "
+                "money arrives."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "expense_id": {"description": "numeric"},
                     "amount": {"description": "numeric, above 0"},
-                    "category": {
-                        "type": "string",
-                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "card_payment"],
-                    },
-                    "payment_method": {"type": "string", "enum": ["cash", "card"]},
+                    "category": {"type": "string", "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "transfer", "card_payment"]},
+                    "account": {"description": "account name or ID"},
+                    "to_account": {"description": "transfers only: account name or ID"},
                     "description": {"type": "string"},
                     "date": {"type": "string", "description": "YYYY-MM-DD"},
                 },
@@ -739,11 +753,71 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="delete_expense",
-            description="Delete a budget entry (expense, income, savings or card payment) by its ID.",
+            description="Delete a budget entry (expense, income, savings or transfer) by its ID.",
             inputSchema={
                 "type": "object",
                 "properties": {"expense_id": {"description": "numeric"}},
                 "required": ["expense_id"],
+            },
+        ),
+        Tool(
+            name="get_accounts",
+            description=(
+                "Get the user's accounts (bank accounts and credit cards) with each balance today and "
+                "after scheduled entries, the total across all of them, what the credit cards owe, "
+                "and the scheduled entries. A credit card owing money has a negative balance."
+            ),
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        Tool(
+            name="add_account",
+            description=(
+                "Add a bank account or credit card. opening_balance is what it held before its "
+                "first entry (negative for a card that owes)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["bank", "credit_card"], "default": "bank"},
+                    "opening_balance": {"description": "numeric, default 0"},
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="update_account",
+            description="Rename an account, change its kind or its opening balance. Send only what changes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"description": "account name or ID"},
+                    "name": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["bank", "credit_card"]},
+                    "opening_balance": {"description": "numeric"},
+                },
+                "required": ["account"],
+            },
+        ),
+        Tool(
+            name="delete_account",
+            description="Delete an account that has no entries (move or delete its entries first).",
+            inputSchema={
+                "type": "object",
+                "properties": {"account": {"description": "account name or ID"}},
+                "required": ["account"],
+            },
+        ),
+        Tool(
+            name="set_category_budgets",
+            description=(
+                "Set the monthly budget for one or more spending categories, e.g. {\"food\": 350}. "
+                "0 means no budget. The others stay as they are."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"budgets": {"type": "object", "description": "category -> monthly amount"}},
+                "required": ["budgets"],
             },
         ),
         Tool(
@@ -1575,46 +1649,81 @@ async def _get_workout_stats(conn: asyncpg.Connection, user_id: int, args: dict)
 
 
 async def _log_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    amount = _f(args.get("amount"))
+    if amount is None or amount <= 0:
+        raise ValueError("amount must be above 0.")
     log_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
-    row = await conn.fetchrow(
-        """
-        INSERT INTO budget_entries (user_id, amount, category, description, date, payment_method)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, amount, category, description, date, payment_method
+    async with conn.transaction():
+        placed = await _place_entry(conn, user_id, args["category"].lower(), args.get("account"),
+                                    args.get("to_account"), args.get("payment_method"))
+        row = await conn.fetchrow(
+            """
+            INSERT INTO budget_entries (user_id, amount, category, description, date,
+                                        account_id, to_account_id, payment_method)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id
+            """,
+            user_id, round(amount, 2), placed["category"], args.get("description") or None, log_date,
+            placed["account_id"], placed["to_account_id"], placed["payment_method"],
+        )
+    entry = (await _entries(conn, user_id, "e.id = $2", row["id"]))[0]
+    return {"status": "scheduled" if entry.get("scheduled") else "logged", "entry": entry}
+
+
+async def _entries(conn: asyncpg.Connection, user_id: int, where: str, *params) -> list[dict]:
+    """Budget entries with their account names, newest first."""
+    rows = await conn.fetch(
+        f"""
+        SELECT e.id, e.amount, e.category, e.description, e.date,
+               a.name AS account, t.name AS to_account, e.payment_method
+        FROM budget_entries e
+        LEFT JOIN budget_accounts a ON a.id = e.account_id
+        LEFT JOIN budget_accounts t ON t.id = e.to_account_id
+        WHERE e.user_id = $1 AND {where}
+        ORDER BY e.date DESC, e.id DESC
         """,
-        user_id,
-        round(_f(args["amount"]), 2),
-        args["category"].lower(),
-        args.get("description"),
-        log_date,
-        # only purchases can sit on the card; income and card payments are cash
-        "card" if args.get("payment_method") == "card"
-        and args["category"].lower() not in NON_SPENDING else "cash",
+        user_id, *params,
     )
-    return {"status": "logged", "entry": _serialize(row)}
+    today = date_cls.today()
+    out = []
+    for r in rows:
+        entry = {k: v for k, v in _serialize(r).items() if v is not None}
+        if r["date"] > today:
+            entry["scheduled"] = True
+        out.append(entry)
+    return out
 
 
 async def _get_expenses(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     from datetime import timedelta
-    period = args.get("period", "week")
+    period = args.get("period") or "week"
     today = date_cls.today()
-    if period == "week":
+    end = None
+    if args.get("month"):
+        start = date_cls.fromisoformat(f"{args['month']}-01")
+        end = (start + timedelta(days=32)).replace(day=1)
+    elif period == "all":
+        start = date_cls.min
+    elif period == "week":
         start = today - timedelta(days=today.weekday())
     elif period == "month":
         start = today.replace(day=1)
     else:
         start = today - timedelta(days=int(period) if str(period).isdigit() else 30)
+    account_id = (await _find_account(conn, user_id, args["account"]))["id"] if args.get("account") else None
 
-    rows = await conn.fetch(
-        """
-        SELECT id, amount, category, description, date, payment_method
-        FROM budget_entries WHERE user_id=$1 AND date>=$2
-        ORDER BY date DESC
-        """,
-        user_id, start,
+    entries = await _entries(
+        conn, user_id,
+        "e.date >= $2 AND ($3::date IS NULL OR e.date < $3)"
+        " AND ($4::int IS NULL OR e.account_id = $4 OR e.to_account_id = $4)",
+        start, end, account_id,
     )
-    total = round(sum(r["amount"] for r in rows), 2)
-    return {"entries": [_serialize(r) for r in rows], "total": total, "period": period}
+    return {
+        "entries": entries,
+        "spent": round(sum(e["amount"] for e in entries if e["category"] not in NON_SPENDING), 2),
+        "income": round(sum(e["amount"] for e in entries if e["category"] == "income"), 2),
+        "period": args.get("month") or period,
+    }
 
 
 async def _get_budget_summary(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
@@ -1623,35 +1732,56 @@ async def _get_budget_summary(conn: asyncpg.Connection, user_id: int, args: dict
     week_start = today - timedelta(days=today.weekday())
     prev_week_start = week_start - timedelta(days=7)
     month_start = today.replace(day=1)
+    first_month = month_start
+    for _ in range(5):
+        first_month = (first_month - timedelta(days=1)).replace(day=1)
 
-    week_rows = await conn.fetch(
-        "SELECT amount, category, date FROM budget_entries WHERE user_id=$1 AND date>=$2",
-        user_id, week_start,
+    rows = await conn.fetch(
+        "SELECT amount, category, date FROM budget_entries WHERE user_id = $1 AND date >= $2",
+        user_id, min(first_month, prev_week_start),
     )
-    prev_rows = await conn.fetch(
-        "SELECT amount FROM budget_entries WHERE user_id=$1 AND date>=$2 AND date<$3",
-        user_id, prev_week_start, week_start,
-    )
-    month_rows = await conn.fetch(
-        "SELECT amount FROM budget_entries WHERE user_id=$1 AND date>=$2",
-        user_id, month_start,
-    )
+    spending = [r for r in rows if r["category"] not in NON_SPENDING]
 
-    by_category: dict = {}
+    def by_category(items) -> dict:
+        totals: dict = {}
+        for r in items:
+            totals[r["category"]] = round(totals.get(r["category"], 0) + r["amount"], 2)
+        return totals
+
+    week = [r for r in spending if week_start <= r["date"] < week_start + timedelta(days=7)]
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+    month = [r for r in spending if month_start <= r["date"] < next_month]
     daily: dict = {}
-    for r in week_rows:
-        by_category[r["category"]] = round(by_category.get(r["category"], 0) + r["amount"], 2)
-        d = str(r["date"])
-        daily[d] = round(daily.get(d, 0) + r["amount"], 2)
+    for r in week:
+        daily[str(r["date"])] = round(daily.get(str(r["date"]), 0) + r["amount"], 2)
+    month_by_cat = by_category(month)
+    limits = await _budget_limits(conn, user_id)
+
+    months = []
+    m = first_month
+    while m <= month_start:
+        nxt = (m + timedelta(days=32)).replace(day=1)
+        in_month = [r for r in rows if m <= r["date"] < nxt]
+        months.append({
+            "month": m.strftime("%Y-%m"),
+            "income": round(sum(r["amount"] for r in in_month if r["category"] == "income"), 2),
+            "spent": round(sum(r["amount"] for r in in_month if r["category"] not in NON_SPENDING), 2),
+        })
+        m = nxt
 
     return {
-        "this_week": {
-            "total": round(sum(r["amount"] for r in week_rows), 2),
-            "by_category": by_category,
-            "daily": daily,
+        "this_week": {"spent": round(sum(r["amount"] for r in week), 2), "by_category": by_category(week), "daily": daily},
+        "last_week": {"spent": round(sum(r["amount"] for r in spending if prev_week_start <= r["date"] < week_start), 2)},
+        "this_month": {
+            "spent": round(sum(r["amount"] for r in month), 2),
+            "income": months[-1]["income"],
+            "categories": {
+                cat: {"spent": month_by_cat.get(cat, 0), "budget": budget,
+                      "left": round(budget - month_by_cat.get(cat, 0), 2) if budget else None}
+                for cat, budget in {**{c: 0 for c in month_by_cat}, **limits}.items()
+            },
         },
-        "last_week": {"total": round(sum(r["amount"] for r in prev_rows), 2)},
-        "this_month": {"total": round(sum(r["amount"] for r in month_rows), 2)},
+        "months": months,
     }
 
 
@@ -1986,7 +2116,10 @@ async def _upsert_personal_record(conn: asyncpg.Connection, user_id: int, args: 
 
 # ---- Edit and delete handlers (the app can change everything; so can Claude) ----
 
-NON_SPENDING = {"income", "savings", "card_payment"}
+INFLOW = {"income", "savings"}                 # money coming into an account
+TRANSFER = {"transfer", "card_payment"}        # between two accounts; card_payment pays a credit card
+NON_SPENDING = INFLOW | TRANSFER
+DEFAULT_BUDGET_LIMITS = {"food": 400, "rent": 1200, "transport": 150, "fitness": 80, "fun": 200, "other": 150}
 
 
 def _require_end_after_start(start, end) -> None:
@@ -2027,7 +2160,12 @@ async def _delete_owned(conn: asyncpg.Connection, table: str, row_id: int, user_
 async def _update_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     entry_id = _i(args["expense_id"])
     current = await conn.fetchrow(
-        "SELECT category FROM budget_entries WHERE id = $1 AND user_id = $2", entry_id, user_id,
+        """
+        SELECT e.category, e.account_id, e.to_account_id, a.kind
+        FROM budget_entries e LEFT JOIN budget_accounts a ON a.id = e.account_id
+        WHERE e.id = $1 AND e.user_id = $2
+        """,
+        entry_id, user_id,
     )
     if not current:
         raise ValueError(f"No budget entry {entry_id} for this user.")
@@ -2037,20 +2175,20 @@ async def _update_expense(conn: asyncpg.Connection, user_id: int, args: dict) ->
         if amount is None or amount <= 0:
             raise ValueError("amount must be above 0.")
         values["amount"] = round(amount, 2)
-    if args.get("category"):
-        values["category"] = args["category"].lower()
     if "description" in args:
         values["description"] = args["description"] or None
     if args.get("date"):
         values["date"] = date_cls.fromisoformat(args["date"])
-    if args.get("payment_method"):
-        if args["payment_method"] not in ("cash", "card"):
-            raise ValueError("payment_method must be cash or card.")
-        values["payment_method"] = args["payment_method"]
-    # Same rule as adding: only purchases can sit on the card
-    if values and values.get("category", current["category"]) in NON_SPENDING:
-        values["payment_method"] = "cash"
-    return await _update_owned(conn, "budget_entries", entry_id, user_id, values)
+    category = (args.get("category") or current["category"]).lower()
+    account = args.get("account") or current["account_id"]
+    # payment_method alone (older callers) moves the entry only if the kind differs
+    if not args.get("account") and args.get("payment_method") and category not in TRANSFER \
+            and (current["kind"] == "credit_card") != (args["payment_method"] == "card"):
+        account = None
+    to_account = args.get("to_account") or current["to_account_id"]
+    async with conn.transaction():
+        values.update(await _place_entry(conn, user_id, category, account, to_account, args.get("payment_method")))
+        return await _update_owned(conn, "budget_entries", entry_id, user_id, values)
 
 
 async def _delete_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
@@ -2203,9 +2341,184 @@ async def _delete_personal_record(conn: asyncpg.Connection, user_id: int, args: 
     return {"status": "deleted", "exercise_name": args["exercise_name"]}
 
 
+# ---- Budget accounts ----
+
+async def _find_account(conn: asyncpg.Connection, user_id: int, ref) -> asyncpg.Record:
+    """An account by ID or by name (any case)."""
+    text = str(ref).strip()
+    row = await conn.fetchrow(
+        "SELECT id, name, kind FROM budget_accounts WHERE user_id = $1 AND (id = $2 OR lower(name) = lower($3))",
+        user_id, int(text) if text.isdigit() else None, text,
+    )
+    if not row:
+        names = [r["name"] for r in await conn.fetch(
+            "SELECT name FROM budget_accounts WHERE user_id = $1 ORDER BY id", user_id)]
+        raise ValueError(f"No account {text!r}. Accounts: {', '.join(names) or 'none yet, add one with add_account'}.")
+    return row
+
+
+async def _default_account(conn: asyncpg.Connection, user_id: int, kind: str) -> asyncpg.Record:
+    """The first account of a kind, made on first use."""
+    row = await conn.fetchrow(
+        "SELECT id, name, kind FROM budget_accounts WHERE user_id = $1 AND kind = $2 ORDER BY id LIMIT 1",
+        user_id, kind,
+    )
+    return row or await conn.fetchrow(
+        "INSERT INTO budget_accounts (user_id, name, kind) VALUES ($1, $2, $3) RETURNING id, name, kind",
+        user_id, "Credit card" if kind == "credit_card" else "Main account", kind,
+    )
+
+
+async def _place_entry(conn: asyncpg.Connection, user_id: int, category: str, account, to_account,
+                       payment_method: Optional[str]) -> dict:
+    """Which account(s) an entry uses, and the category / payment_method that follow from them."""
+    if category in TRANSFER:
+        source = await _find_account(conn, user_id, account) if account else await _default_account(conn, user_id, "bank")
+        if to_account:
+            target = await _find_account(conn, user_id, to_account)
+        elif category == "card_payment":
+            target = await _default_account(conn, user_id, "credit_card")
+        else:
+            raise ValueError("A transfer needs to_account: the account the money arrives in.")
+        if source["id"] == target["id"]:
+            raise ValueError("A transfer needs two different accounts.")
+        return {"category": "card_payment" if target["kind"] == "credit_card" else "transfer",
+                "account_id": source["id"], "to_account_id": target["id"], "payment_method": "cash"}
+    source = (await _find_account(conn, user_id, account) if account
+              else await _default_account(conn, user_id, "credit_card" if payment_method == "card" else "bank"))
+    return {"category": category, "account_id": source["id"], "to_account_id": None,
+            "payment_method": "card" if source["kind"] == "credit_card" and category not in NON_SPENDING else "cash"}
+
+
+async def _get_accounts(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    accounts = await conn.fetch(
+        "SELECT id, name, kind, opening_balance FROM budget_accounts WHERE user_id = $1 ORDER BY id", user_id)
+    rows = await conn.fetch(
+        "SELECT amount, category, date, account_id, to_account_id FROM budget_entries WHERE user_id = $1", user_id)
+    today = date_cls.today()
+    out = []
+    for a in accounts:
+        balance = projected = a["opening_balance"] or 0.0
+        for r in rows:
+            if r["to_account_id"] == a["id"]:
+                effect = r["amount"]
+            elif r["account_id"] == a["id"]:
+                effect = r["amount"] if r["category"] in INFLOW else -r["amount"]
+            else:
+                continue
+            projected += effect
+            if r["date"] <= today:
+                balance += effect
+        out.append({"id": a["id"], "name": a["name"], "kind": a["kind"], "opening_balance": a["opening_balance"],
+                    "balance": round(balance, 2), "after_scheduled": round(projected, 2)})
+    return {
+        "accounts": out,
+        "total": round(sum(a["balance"] for a in out), 2),
+        "total_after_scheduled": round(sum(a["after_scheduled"] for a in out), 2),
+        "credit_cards_owe": round(sum(max(-a["balance"], 0) for a in out if a["kind"] == "credit_card"), 2),
+        "scheduled": await _entries(conn, user_id, "e.date > $2", today),
+    }
+
+
+def _account_kind(value) -> str:
+    if value not in ("bank", "credit_card"):
+        raise ValueError("kind must be bank or credit_card.")
+    return value
+
+
+async def _account_name_free(conn: asyncpg.Connection, user_id: int, name, account_id: Optional[int] = None) -> str:
+    name = str(name or "").strip()[:60]
+    if not name:
+        raise ValueError("Give the account a name.")
+    taken = await conn.fetchval(
+        "SELECT 1 FROM budget_accounts WHERE user_id = $1 AND lower(name) = lower($2) AND id <> coalesce($3, 0)",
+        user_id, name, account_id,
+    )
+    if taken:
+        raise ValueError(f"There is already an account called {name}.")
+    return name
+
+
+async def _add_account(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    opening = _f(args["opening_balance"]) if args.get("opening_balance") not in (None, "") else 0.0
+    if opening is None:
+        raise ValueError("opening_balance must be a number.")
+    row = await conn.fetchrow(
+        "INSERT INTO budget_accounts (user_id, name, kind, opening_balance) VALUES ($1, $2, $3, $4) "
+        "RETURNING id, name, kind, opening_balance",
+        user_id, await _account_name_free(conn, user_id, args.get("name")),
+        _account_kind(args.get("kind") or "bank"), round(opening, 2),
+    )
+    return {"status": "added", "account": _serialize(row)}
+
+
+async def _update_account(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    account = await _find_account(conn, user_id, args["account"])
+    values = {}
+    if args.get("name"):
+        values["name"] = await _account_name_free(conn, user_id, args["name"], account["id"])
+    if args.get("opening_balance") is not None:
+        opening = _f(args["opening_balance"])
+        if opening is None:
+            raise ValueError("opening_balance must be a number.")
+        values["opening_balance"] = round(opening, 2)
+    async with conn.transaction():
+        if args.get("kind") and _account_kind(args["kind"]) != account["kind"]:
+            values["kind"] = args["kind"]
+            is_card = args["kind"] == "credit_card"
+            # Purchases on it become (or stop being) card purchases; paying into it a card payment
+            await conn.execute(
+                "UPDATE budget_entries SET payment_method = CASE WHEN category = ANY($2::text[]) THEN 'cash' "
+                "ELSE $3 END WHERE account_id = $1",
+                account["id"], sorted(NON_SPENDING), "card" if is_card else "cash",
+            )
+            await conn.execute(
+                "UPDATE budget_entries SET category = $2 WHERE to_account_id = $1",
+                account["id"], "card_payment" if is_card else "transfer",
+            )
+        return await _update_owned(conn, "budget_accounts", account["id"], user_id, values)
+
+
+async def _delete_account(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    account = await _find_account(conn, user_id, args["account"])
+    used = await conn.fetchval(
+        "SELECT count(*) FROM budget_entries WHERE account_id = $1 OR to_account_id = $1", account["id"])
+    if used:
+        raise ValueError(f"{account['name']} has {used} entries. Move them (update_expense account=...) or delete them first.")
+    return await _delete_owned(conn, "budget_accounts", account["id"], user_id)
+
+
+async def _budget_limits(conn: asyncpg.Connection, user_id: int) -> dict:
+    stored = await conn.fetchval("SELECT budget_limits FROM users WHERE id = $1", user_id)
+    return {**DEFAULT_BUDGET_LIMITS, **(json.loads(stored) if isinstance(stored, str) else stored or {})}
+
+
+async def _set_category_budgets(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    budgets = args.get("budgets")
+    if isinstance(budgets, str):
+        budgets = json.loads(budgets)
+    if not isinstance(budgets, dict) or not budgets:
+        raise ValueError('budgets must look like {"food": 350}.')
+    changes = {}
+    for cat, value in budgets.items():
+        amount = _f(value)
+        if amount is None or amount < 0:
+            raise ValueError("Budgets must be numbers of 0 or more.")
+        changes[str(cat).strip().lower()[:50]] = round(amount, 2)
+    stored = await conn.fetchval("SELECT budget_limits FROM users WHERE id = $1", user_id)
+    current = json.loads(stored) if isinstance(stored, str) else stored or {}
+    await conn.execute("UPDATE users SET budget_limits = $2::json WHERE id = $1", user_id, json.dumps({**current, **changes}))
+    return {"status": "updated", "budgets": await _budget_limits(conn, user_id)}
+
+
 EDIT_HANDLERS = {
     "update_expense": _update_expense,
     "delete_expense": _delete_expense,
+    "get_accounts": _get_accounts,
+    "add_account": _add_account,
+    "update_account": _update_account,
+    "delete_account": _delete_account,
+    "set_category_budgets": _set_category_budgets,
     "update_meal_log": _update_meal_log,
     "delete_meal_template": _delete_meal_template,
     "update_workout": _update_workout,

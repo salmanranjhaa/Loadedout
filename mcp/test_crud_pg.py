@@ -33,19 +33,57 @@ async def main():
         raise AssertionError(f"{tool} {args} should have been refused")
 
     today, yesterday = str(date.today()), str(date.today() - timedelta(days=1))
+    tomorrow = str(date.today() + timedelta(days=1))
 
     # ---- budget
     e = (await call("log_expense", amount=20, category="food", payment_method="card", description="Takeaway"))["entry"]
+    assert e["account"] == "Credit card" and e["payment_method"] == "card", e   # card alone: first credit card
     await call("update_expense", expense_id=e["id"], amount="25.5", description="Takeaway (Fri)")
     row = (await call("get_expenses", period="month"))["entries"][0]
     assert (row["amount"], row["payment_method"], row["description"]) == (25.5, "card", "Takeaway (Fri)"), row
-    await call("update_expense", expense_id=e["id"], category="income")
+    await call("update_expense", expense_id=e["id"], category="income")                # a refund
     assert (await call("get_expenses", period="month"))["entries"][0]["payment_method"] == "cash"
     await refused("update_expense", expense_id=e["id"], amount=0)
     await refused("delete_expense", user=other, expense_id=e["id"])          # not theirs
     await call("delete_expense", expense_id=e["id"])
     assert (await call("get_expenses", period="month"))["entries"] == []
     print("  PASS budget: add, read, update (card -> cash for income), delete, owner only")
+
+    # ---- budget accounts, transfers, scheduled card bill, category budgets
+    await call("add_account", name="UBS", opening_balance="1000")
+    await call("add_account", name="Revolut", opening_balance=500)
+    await refused("add_account", name="ubs")
+    lidl = (await call("log_expense", amount=100, category="food", account="ubs", description="Lidl"))["entry"]
+    await call("log_expense", amount=200, category="transfer", account="UBS", to_account="Revolut")
+    await call("log_expense", amount=80, category="food", account="Credit card")
+    paid = (await call("log_expense", amount=50, category="transfer", account="UBS", to_account="credit card"))["entry"]
+    assert paid["category"] == "card_payment", paid
+    later = await call("log_expense", amount=30, category="transfer", account="UBS", to_account="Credit card", date=tomorrow)
+    assert later["status"] == "scheduled" and later["entry"]["scheduled"], later
+    await refused("log_expense", amount=5, category="transfer", account="UBS")
+    await refused("log_expense", amount=5, category="food", account="Nope")
+    acc = await call("get_accounts")
+    bal = {a["name"]: (a["balance"], a["after_scheduled"]) for a in acc["accounts"]}
+    assert bal == {"Credit card": (-30, 0), "UBS": (650, 620), "Revolut": (700, 700)}, bal
+    assert (acc["total"], acc["total_after_scheduled"], acc["credit_cards_owe"], len(acc["scheduled"])) == (1320, 1320, 30, 1), acc
+    card = (await call("get_expenses", period="all", account="Credit card"))["entries"]
+    assert len(card) == 3 and card[0]["scheduled"], card
+    assert (await call("get_expenses", month=today[:7]))["spent"] == 180
+
+    await call("update_expense", expense_id=lidl["id"], account="Revolut")
+    await call("update_account", account="Revolut", kind="credit_card", name="Revolut Card")
+    moved = (await call("get_expenses", period="all", account="Revolut Card"))["entries"]
+    assert {(m["category"], m["payment_method"]) for m in moved} == {("food", "card"), ("card_payment", "cash")}, moved
+    await refused("delete_account", account="Revolut Card")
+    await call("add_account", name="Spare")
+    await call("delete_account", account="spare")
+
+    await call("set_category_budgets", budgets={"food": 150, "Fun": "0"})
+    summary = await call("get_budget_summary")
+    assert summary["this_month"]["categories"]["food"] == {"spent": 180, "budget": 150, "left": -30}, summary
+    assert summary["this_month"]["categories"]["fun"]["budget"] == 0 and len(summary["months"]) == 6, summary
+    await refused("set_category_budgets", budgets={"food": -1})
+    print("  PASS budget accounts: balances, transfers, scheduled card bill, moves, kinds, category budgets")
 
     # ---- meals
     m = (await call("log_meal", meal_type="lunch", name="Rice bowl", calories=650, protein_g=45))["entry"]

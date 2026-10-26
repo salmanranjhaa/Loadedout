@@ -48,7 +48,9 @@ export function Icon({ name, size = 20, color = "currentColor", strokeWidth = 1.
     case "logout":     return <svg {...v}><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" {...p}/></svg>;
     case "shield":     return <svg {...v}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" {...p}/></svg>;
     case "camera":     return <svg {...v}><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" {...p}/><circle cx="12" cy="13" r="4" {...p}/></svg>;
-    case "copy":       return <svg {...v}><rect x="9" y="9" width="13" height="13" rx="2" {...p}/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" {...p}/></svg>;
+    case "bank":       return <svg {...v}><path d="M3 9.5L12 4l9 5.5M4.5 10v8M9.5 10v8M14.5 10v8M19.5 10v8M3 20.5h18" {...p}/></svg>;
+    case "transfer":   return <svg {...v}><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4" {...p}/></svg>;
+    case "copy":    return <svg {...v}><rect x="9" y="9" width="13" height="13" rx="2" {...p}/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" {...p}/></svg>;
     default:           return <svg {...v}><circle cx="12" cy="12" r="8" {...p}/></svg>;
   }
 }

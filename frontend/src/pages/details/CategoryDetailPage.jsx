@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { T } from "../../design/tokens";
 import { Icon } from "../../design/icons";
 import { Card, DetailHeader, PageScroll } from "../../design/components";
+import { monthLabel as labelOf, monthOf, todayISO } from "../../utils/budget";
 
 function DailyBars({ days, color }) {
   const max = Math.max(...days.map((d) => d.total), 1);
@@ -22,7 +24,7 @@ function DailyBars({ days, color }) {
   );
 }
 
-export default function CategoryDetailPage({ category = {}, entries = [], onBack, onEdit, currency: cur = "CHF" }) {
+export default function CategoryDetailPage({ category = {}, entries = [], onBack, onEdit, onSaveBudget, month = monthOf(todayISO()), currency: cur = "CHF" }) {
   const {
     label,
     name = label || "Category",
@@ -39,13 +41,20 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
   const remaining = budget - spent;
   const over = budget > 0 && remaining < 0;
 
-  const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const monthLabel = labelOf(month);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState(String(budget || ""));
 
-  // Daily totals across the current month, from real entries
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const prefix = new Date().toISOString().slice(0, 8); // "YYYY-MM-"
+  async function saveBudget() {
+    const value = Math.max(parseFloat(budgetDraft) || 0, 0);
+    if (await onSaveBudget(value)) setEditingBudget(false);
+  }
+
+  // Daily totals across the month, from real entries
+  const [year, mon] = month.split("-").map(Number);
+  const daysInMonth = new Date(year, mon, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => {
-    const key = `${prefix.slice(0, 8)}${String(i + 1).padStart(2, "0")}`;
+    const key = `${month}-${String(i + 1).padStart(2, "0")}`;
     return { day: i + 1, total: sorted.filter((e) => (e.date || "").slice(0, 10) === key).reduce((s, e) => s + (e.amount || 0), 0) };
   });
 
@@ -60,7 +69,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
       <DetailHeader
         onBack={onBack}
         title={name}
-        subtitle={`${txCount} transaction${txCount !== 1 ? "s" : ""} this month`}
+        subtitle={`${txCount} transaction${txCount !== 1 ? "s" : ""} · ${monthLabel}`}
       />
 
       <PageScroll padBottom={`calc(${T.navHeight} + 24px)`}>
@@ -71,7 +80,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
             background: `linear-gradient(135deg, ${color}22, ${color}08)`,
             border: `1px solid ${color}33`,
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: budget > 0 ? 16 : 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: onSaveBudget || budget > 0 ? 14 : 0 }}>
               <div style={{ width: 44, height: 44, borderRadius: 14, background: color + "22", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Icon name={icon} size={22} color={color} />
               </div>
@@ -87,6 +96,23 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
                 </div>
               </div>
             </div>
+
+            {onSaveBudget && (editingBudget ? (
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                <input type="number" inputMode="decimal" min="0" step="10" value={budgetDraft} autoFocus aria-label="Monthly budget"
+                  onChange={(e) => setBudgetDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveBudget()} placeholder="0 = no budget"
+                  style={{ flex: 1, minWidth: 0, background: T.elevated, border: `1px solid ${color}66`, borderRadius: 10, padding: "9px 12px", fontSize: 14, color: T.text, fontFamily: T.fontMono, outline: "none" }} />
+                <button onClick={saveBudget}
+                  style={{ padding: "0 16px", background: color, color: "#0A0A0F", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  Save
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => { setBudgetDraft(String(budget || "")); setEditingBudget(true); }}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: `1px solid ${color}55`, color, borderRadius: 9999, padding: "5px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+                <Icon name="edit" size={12} color={color} /> {budget > 0 ? `Monthly budget ${cur} ${budget}` : "Set a monthly budget"}
+              </button>
+            ))}
 
             {budget > 0 && (
               <>
@@ -132,7 +158,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
           <div style={{ padding: "0 16px 20px" }}>
             <Card style={{ padding: 16 }}>
               <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
-                Day-by-day · this month
+                Day-by-day · {monthLabel}
               </div>
               <DailyBars days={days} color={color} />
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
@@ -147,7 +173,7 @@ export default function CategoryDetailPage({ category = {}, entries = [], onBack
         <div style={{ padding: "0 16px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
           {sorted.length === 0 ? (
             <div style={{ textAlign: "center", padding: "32px 0", color: T.textDim, fontSize: 13 }}>
-              No transactions in this category yet.
+              No {name.toLowerCase()} spending in {monthLabel}.
             </div>
           ) : (
             sorted.map((tx) => (
