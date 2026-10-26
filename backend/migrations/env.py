@@ -15,7 +15,7 @@ from app.models.analytics import WeightLog, WorkoutLog, DailySnapshot
 from app.models.chat import ChatSession  # noqa: F401
 from app.models.google_oauth import GoogleOAuthToken  # noqa: F401
 from app.models.fitness import PersonalRecord, WaterLog, UserGoal, WorkoutSet  # noqa: F401
-from app.models.budget import BudgetEntry  # noqa: F401
+from app.models.budget import BudgetAccount, BudgetEntry  # noqa: F401
 from app.models.inventory import InventoryItem  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401
 from app.models.mcp_key import McpKey  # noqa: F401

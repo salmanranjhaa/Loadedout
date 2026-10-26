@@ -348,6 +348,12 @@ export const budgetAPI = {
   getSummary: () => request("/budget/summary"),
   update: (id, data) => request(`/budget/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id) => request(`/budget/${id}`, { method: "DELETE" }),
+  accounts: () => request("/budget/accounts"),
+  addAccount: (data) => request("/budget/accounts", { method: "POST", body: JSON.stringify(data) }),
+  updateAccount: (id, data) => request(`/budget/accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteAccount: (id) => request(`/budget/accounts/${id}`, { method: "DELETE" }),
+  limits: () => request("/budget/limits"),
+  setLimits: (limits) => request("/budget/limits", { method: "PUT", body: JSON.stringify({ limits }) }),
 };
 
 export const aiAPI = {

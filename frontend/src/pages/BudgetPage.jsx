@@ -1,32 +1,18 @@
 import { useState, useEffect } from "react";
 import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
-import { Card, Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots, Hint } from "../design/components";
+import { BottomSheet, Card, Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots } from "../design/components";
 import { budgetAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import CategoryDetailPage from "./details/CategoryDetailPage";
+import AccountDetailPage, { AccountForm } from "./details/AccountDetailPage";
+import BudgetEntrySheet from "./details/BudgetEntrySheet";
+import {
+  EXPENSE_CATS, accountIcon, accountKindLabel, fmtDay, getCat, isInflow, isScheduled, isSpending, isTransfer,
+  money, monthLabel, monthOf, shiftMonth, todayISO,
+} from "../utils/budget";
 
-const EXPENSE_CATS = [
-  { id: "food",      label: "Food",      color: T.amber,   icon: "meal"    },
-  { id: "rent",      label: "Rent",      color: T.violet,  icon: "location" },
-  { id: "transport", label: "Transport", color: T.blue,    icon: "bike"    },
-  { id: "fitness",   label: "Fitness",   color: "#5C8FFC", icon: "dumbbell" },
-  { id: "fun",       label: "Fun",       color: "#FC5C9E", icon: "heart"   },
-  { id: "other",     label: "Other",     color: "#FC8B5C", icon: "pill"    },
-];
-
-const INCOME_CATS = [
-  { id: "income",    label: "Income",    color: T.teal,    icon: "trend-up" },
-  { id: "savings",   label: "Savings",   color: "#5C8FFC", icon: "shield"  },
-];
-
-// Paying off the credit card: moves cash to the card, not spending
-const CARD_PAYMENT = { id: "card_payment", label: "Card payment", color: T.violet, icon: "budget" };
-
-const CATS = [...EXPENSE_CATS, ...INCOME_CATS, CARD_PAYMENT];
-const CAT_BUDGETS = { food: 400, rent: 1200, transport: 150, fitness: 80, fun: 200, other: 150 };
-
-function getCat(id) { return CATS.find(c => c.id === id) || CATS[5]; }
+const sum = list => list.reduce((s, e) => s + e.amount, 0);
 
 function groupByDate(entries) {
   const groups = {};
@@ -98,39 +84,12 @@ function DonutChart({ data, active, onSelect, cur }) {
   );
 }
 
-function SparklineSVG({ data }) {
-  if (!data || data.length < 2) return null;
-  const w = 200, h = 48;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const pts = data.map((v, i) => [
-    (i / (data.length - 1)) * w,
-    h - ((v - min) / range) * (h - 8) - 4,
-  ]);
-  const path = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
-  const fill = `${path} L ${w} ${h} L 0 ${h} Z`;
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: "visible" }}>
-      <defs>
-        <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={T.green} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={T.green} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={fill} fill="url(#spark-fill)" />
-      <path d={path} fill="none" stroke={T.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function WeekBarsChart({ bars, avg }) {
-  const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
+function WeekBarsChart({ bars, labels, avg }) {
   const max = Math.max(...bars, 1);
   const h = 72;
   const w = 280;
   const barW = 24;
-  const gap = (w - DAYS.length * barW) / (DAYS.length - 1);
+  const gap = (w - bars.length * barW) / (bars.length - 1);
   const avgY = h - (avg / max) * h;
 
   return (
@@ -147,7 +106,7 @@ function WeekBarsChart({ bars, avg }) {
         return (
           <g key={i}>
             <rect x={x} y={h - bh} width={barW} height={bh} rx={4} fill="url(#bar-grad)" />
-            <text x={x + barW / 2} y={h + 14} textAnchor="middle" fill={T.textDim} fontSize="9" fontFamily={T.fontFamily}>{DAYS[i]}</text>
+            <text x={x + barW / 2} y={h + 14} textAnchor="middle" fill={T.textDim} fontSize="9" fontFamily={T.fontFamily}>{labels[i]}</text>
           </g>
         );
       })}
@@ -161,220 +120,134 @@ function WeekBarsChart({ bars, avg }) {
   );
 }
 
-function entryTypeOf(category) {
-  return INCOME_CATS.some(c => c.id === category) ? "income" : category === CARD_PAYMENT.id ? "payment" : "expense";
-}
-
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Add or edit sheet — toggle between Expense, Income and Card bill at the top.
-// Passing `entry` opens it on that transaction, with Save changes and Delete.
-function AddEntrySheet({ onClose, onAdded, cur, cardToPay = 0, entry = null }) {
-  const [entryType, setEntryType] = useState(entry ? entryTypeOf(entry.category) : "expense");
-  const isIncome = entryType === "income";
-  const isPayment = entryType === "payment";
-  const cats = isIncome ? INCOME_CATS : EXPENSE_CATS;
-  const [cat, setCat] = useState(entry?.category || "food");
-  const [amount, setAmount] = useState(entry ? String(entry.amount) : "");
-  const [desc, setDesc] = useState(entry?.description || "");
-  const [account, setAccount] = useState("");
-  const [paidWith, setPaidWith] = useState(entry?.payment_method || "cash"); // expenses only: "cash" or "card"
-  const [day, setDay] = useState(entry?.date || todayISO());
-  const [saving, setSaving] = useState(false);
-
-  function switchType(t) {
-    setEntryType(t);
-    setCat(t === "income" ? "income" : t === "payment" ? CARD_PAYMENT.id : "food");
-    setAccount("");
-    // Paying the card usually clears what's owed; start from that amount
-    if (t === "payment" && cardToPay > 0 && !entry) setAmount(cardToPay.toFixed(2));
-  }
-
-  async function handleSave() {
-    if (!amount || parseFloat(amount) <= 0) return;
-    setSaving(true);
-    try {
-      const parts = [desc.trim(), isIncome && account.trim() ? `(${account.trim()})` : ""].filter(Boolean);
-      const data = {
-        amount: parseFloat(amount),
-        category: cat,
-        description: parts.join(" ") || null,
-        payment_method: entryType === "expense" ? paidWith : "cash",
-        date_str: day || todayISO(),
-      };
-      if (entry) await budgetAPI.update(entry.id, data);
-      else await budgetAPI.add(data);
-      onAdded();
-      onClose();
-      showToast(entry ? "Changes saved" : isIncome ? "Income added" : isPayment ? "Card payment recorded" : "Expense added", "success");
-    } catch (e) { showToast(e?.message || "Failed to save", "error"); }
-    setSaving(false);
-  }
-
-  async function handleDelete() {
-    if (!window.confirm(`Delete ${entry.description || getCat(entry.category).label} (${cur} ${entry.amount.toFixed(2)})?`)) return;
-    setSaving(true);
-    try {
-      await budgetAPI.delete(entry.id);
-      onAdded();
-      onClose();
-      showToast("Entry deleted", "success");
-    } catch (e) { showToast(e?.message || "Couldn't delete", "error"); }
-    setSaving(false);
-  }
-
-  const accentColor = isIncome ? T.green : isPayment ? T.violet : T.amber;
-
+// Income and spending per month; tapping a month opens it
+function MonthBars({ months, selected, onSelect }) {
+  const max = Math.max(...months.flatMap(m => [m.income, m.spent]), 1);
+  const h = 64;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(2px)" }} />
-      <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "calc(100% - 24px)", overflowY: "auto" }}>
-        <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, margin: "0 auto 16px" }} />
-        {entry && <div style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 14 }}>Edit entry</div>}
-
-        {/* Type toggle */}
-        <div style={{ display: "flex", background: T.elevated, borderRadius: 12, padding: 4, marginBottom: 18, gap: 4 }}>
-          {[{ id: "expense", label: "Expense", icon: "budget", color: T.amber }, { id: "income", label: "Income", icon: "trend-up", color: T.teal }, { id: "payment", label: "Card bill", icon: "shield", color: T.violet }].map(opt => (
-            <button key={opt.id} onClick={() => switchType(opt.id)}
-              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 9, background: entryType === opt.id ? opt.color : "transparent", border: "none", color: entryType === opt.id ? "#0A0A0F" : T.textMuted, fontSize: 13, fontWeight: entryType === opt.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-              <Icon name={opt.icon} size={14} color={entryType === opt.id ? "#0A0A0F" : T.textDim} />
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Amount — big centered input */}
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Amount ({cur})</div>
-          <input type="number" step="0.05" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus={!entry}
-            style={{ width: "100%", background: T.elevated, border: `2px solid ${amount ? accentColor + "88" : T.border}`, borderRadius: 14, padding: "14px 0", fontSize: 32, fontWeight: 800, color: accentColor, fontFamily: T.fontMono, outline: "none", textAlign: "center", boxSizing: "border-box", transition: "border-color 0.15s" }} />
-        </div>
-
-        {isPayment ? (
-          <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5, marginBottom: 14, textAlign: "center" }}>
-            Card to pay: <b style={{ color: T.text }}>{cur} {cardToPay.toFixed(2)}</b>
-            <br />Paying the card moves money from your cash to the card. It isn't counted as spending again.
-          </div>
-        ) : (
-          <>
-            {/* Category */}
-            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Category</div>
-            <div style={{ display: "grid", gridTemplateColumns: isIncome ? "1fr 1fr" : "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
-              {cats.map(c => (
-                <button key={c.id} onClick={() => setCat(c.id)}
-                  style={{ padding: "10px 6px", borderRadius: 10, background: cat === c.id ? `${c.color}22` : T.elevated, border: `1.5px solid ${cat === c.id ? c.color : T.border}`, color: cat === c.id ? c.color : T.textMuted, fontSize: 11, fontWeight: cat === c.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
-                  <Icon name={c.icon} size={17} color={cat === c.id ? c.color : T.textDim} />
-                  {c.label}
-                </button>
-              ))}
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+      {months.map(m => {
+        const on = m.key === selected;
+        return (
+          <button key={m.key} onClick={() => onSelect(m.key)} aria-pressed={on} aria-label={`${monthLabel(m.key)}: income ${m.income.toFixed(0)}, spent ${m.spent.toFixed(0)}`}
+            style={{ flex: 1, minWidth: 0, background: on ? T.elevated : "transparent", border: `1px solid ${on ? T.border : "transparent"}`, borderRadius: 10, padding: "8px 0 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, cursor: "pointer", fontFamily: "inherit" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: h }}>
+              <div style={{ width: 9, height: Math.max(2, (m.income / max) * h), background: T.teal, borderRadius: 3, opacity: on ? 1 : 0.7 }} />
+              <div style={{ width: 9, height: Math.max(2, (m.spent / max) * h), background: T.amber, borderRadius: 3, opacity: on ? 1 : 0.7 }} />
             </div>
-          </>
-        )}
-
-        {/* Description */}
-        <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
-          placeholder={isIncome ? "Source (e.g. Monthly salary, Freelance)" : isPayment ? "Note (e.g. September statement)" : "Description (e.g. Lidl groceries)"}
-          style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
-
-        {/* Paid with (expenses only) */}
-        {entryType === "expense" && (
-          <>
-            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", margin: "6px 0 8px" }}>Paid with</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              {[{ id: "cash", label: "Cash / debit" }, { id: "card", label: "Credit card" }].map(m => (
-                <button key={m.id} onClick={() => setPaidWith(m.id)} aria-pressed={paidWith === m.id}
-                  style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: paidWith === m.id ? `${T.amber}22` : T.elevated, border: `1.5px solid ${paidWith === m.id ? T.amber : T.border}`, color: paidWith === m.id ? T.amber : T.textMuted, fontSize: 12, fontWeight: paidWith === m.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Bank account (income only) */}
-        {isIncome && (
-          <input type="text" value={account} onChange={e => setAccount(e.target.value)}
-            placeholder="Bank / account (e.g. ZKB, Revolut)"
-            style={{ width: "100%", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
-        )}
-
-        <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase", margin: "6px 0 0" }}>
-          Date
-          <input type="date" value={day} max={todayISO()} onChange={e => setDay(e.target.value)}
-            style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, color: T.text, fontFamily: "inherit", outline: "none", colorScheme: "dark" }} />
-        </label>
-
-        <div style={{ height: 12 }} />
-        <div style={{ display: "flex", gap: 8 }}>
-          {entry && (
-            <button onClick={handleDelete} disabled={saving} aria-label="Delete entry" title="Delete"
-              style={{ width: 52, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon name="trash" size={17} color={T.negative} />
-            </button>
-          )}
-          <button onClick={handleSave} disabled={saving || !amount || parseFloat(amount) <= 0}
-            style={{ flex: 1, padding: "14px 0", background: !amount || parseFloat(amount) <= 0 ? T.elevated : accentColor, color: !amount || parseFloat(amount) <= 0 ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 13, fontSize: 15, fontWeight: 700, cursor: saving || !amount ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
-            {saving ? "Saving…" : entry ? "Save changes" : isIncome ? "Add Income" : isPayment ? "Record card payment" : "Add Expense"}
+            <div style={{ fontSize: 10, color: on ? T.text : T.textDim, fontWeight: on ? 700 : 500 }}>{monthLabel(m.key, { month: "short" })}</div>
           </button>
-        </div>
-        {(!amount || parseFloat(amount) <= 0) && <Hint style={{ marginTop: 8 }}>Enter an amount above 0 to save.</Hint>}
-      </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Stat({ label, value, color = T.text }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0, background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
     </div>
   );
 }
 
 export default function BudgetPage({ profile, onProfile }) {
   const cur = profile?.preferred_currency || "CHF";
+  const today = todayISO();
+  const thisMonth = monthOf(today);
   const [entries, setEntries] = useState([]);
-  const [activeDonut, setActiveDonut] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editEntry, setEditEntry] = useState(null);
+  const [totals, setTotals] = useState({ accounts: [], net_worth: 0, net_worth_projected: 0, card_to_pay: 0 });
+  const [limits, setLimits] = useState({});
+  const [month, setMonth] = useState(thisMonth);
   const [loading, setLoading] = useState(true);
+  const [activeDonut, setActiveDonut] = useState(null);
+  const [sheet, setSheet] = useState(null);             // { entry } to edit, { preset } to add
+  const [openAccountId, setOpenAccountId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [serverCardToPay, setServerCardToPay] = useState(null); // all months, from the server
+  const [addingAccount, setAddingAccount] = useState(false);
 
   async function reload() {
     try {
-      const e = await budgetAPI.getAll("month");
+      const [e, a, l] = await Promise.all([budgetAPI.getAll("all"), budgetAPI.accounts(), budgetAPI.limits()]);
       if (e?.entries) setEntries(e.entries);
-      if (typeof e?.card_to_pay === "number") setServerCardToPay(e.card_to_pay);
+      if (a?.accounts) setTotals(a);
+      if (l?.limits) setLimits(l.limits);
     } catch {}
   }
 
   useEffect(() => { reload().finally(() => setLoading(false)); }, []);
 
-  // Income/savings come in; card payments only move cash to the card;
-  // everything else is spending.
-  const isIncomeEntry = e => e.category === "income" || e.category === "savings";
-  const isCardPayment = e => e.category === CARD_PAYMENT.id;
-  const incomeEntries = entries.filter(isIncomeEntry);
-  const expenseEntries = entries.filter(e => !isIncomeEntry(e) && !isCardPayment(e));
+  const { accounts } = totals;
+  const names = Object.fromEntries(accounts.map(a => [a.id, a.name]));
+  const openAccount = accounts.find(a => a.id === openAccountId);
+  const banks = accounts.filter(a => a.kind !== "credit_card");
+  const inBanks = banks.reduce((s, a) => s + a.balance, 0);
+  const cardsOwe = totals.card_to_pay;
+  const scheduled = entries.filter(isScheduled).sort((a, b) => a.date.localeCompare(b.date));
 
-  const totalIncome = incomeEntries.reduce((s, e) => s + e.amount, 0);
-  const totalExpenses = expenseEntries.reduce((s, e) => s + e.amount, 0);
-  const balance = totalIncome - totalExpenses; // after paying the card bill
-  // Credit-card spending is spent money, but it leaves the account only when
-  // the card is paid: cash balance = income − cash spending − card payments.
-  const cardSpent = expenseEntries.filter(e => e.payment_method === "card").reduce((s, e) => s + e.amount, 0);
-  const cardPaid = entries.filter(isCardPayment).reduce((s, e) => s + e.amount, 0);
-  const cashBalance = totalIncome - (totalExpenses - cardSpent) - cardPaid;
-  const cardToPay = serverCardToPay ?? Math.max(cardSpent - cardPaid, 0);
-  const savingsPct = totalIncome > 0 ? Math.round((balance / totalIncome) * 100) : 0;
-
-  const catData = expenseEntries.reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + e.amount; return acc; }, {});
+  // The month being looked at
+  const monthEntries = entries.filter(e => monthOf(e.date) === month);
+  const spending = monthEntries.filter(isSpending);
+  const income = sum(monthEntries.filter(e => e.category === "income"));
+  const spent = sum(spending);
+  const catData = spending.reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + e.amount; return acc; }, {});
   const totalExp = Object.values(catData).reduce((s, v) => s + v, 0) || 1;
-  const grouped = groupByDate(entries);
+  const grouped = groupByDate(monthEntries);
+  const firstMonth = entries.length ? monthOf(entries[entries.length - 1].date) : thisMonth;
+  const lastMonth = entries.length && monthOf(entries[0].date) > thisMonth ? monthOf(entries[0].date) : thisMonth;
+  const chartEnd = month > thisMonth ? month : thisMonth;
+  // The total across accounts when the month began and at its end (today for
+  // this month): income in minus spending out; transfers don't change it
+  const openingTotal = accounts.reduce((s, a) => s + (a.opening_balance || 0), 0);
+  const totalBefore = cutoff => openingTotal + entries.filter(e => e.date < cutoff)
+    .reduce((s, e) => s + (isInflow(e) ? e.amount : isSpending(e) ? -e.amount : 0), 0);
+  const monthStartTotal = totalBefore(`${month}-01`);
+  const monthEndTotal = month === thisMonth ? totals.net_worth : totalBefore(`${shiftMonth(month, 1)}-01`);
+  const history = Array.from({ length: 6 }, (_, i) => shiftMonth(chartEnd, i - 5)).map(key => {
+    const list = entries.filter(e => monthOf(e.date) === key);
+    return { key, income: sum(list.filter(e => e.category === "income")), spent: sum(list.filter(isSpending)) };
+  });
 
-  function fmtDate(d) {
-    const dt = new Date(d + "T00:00:00");
-    const today = new Date(); today.setHours(0,0,0,0);
-    const diff = Math.round((today - dt) / 86400000);
-    if (diff === 0) return "Today";
-    if (diff === 1) return "Yesterday";
-    return dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  async function saveBudget(catId, value) {
+    try {
+      const r = await budgetAPI.setLimits({ [catId]: value });
+      if (r?.limits) setLimits(r.limits);
+      setSelectedCategory(c => c && { ...c, budget: value });
+      showToast(value > 0 ? "Budget saved" : "Budget removed", "success");
+      return true;
+    } catch (e) { showToast(e?.message || "Couldn't save the budget", "error"); return false; }
+  }
+
+  const accountLine = e => (isTransfer(e) ? `${names[e.account_id] || "?"} → ${names[e.to_account_id] || "?"}` : names[e.account_id]);
+  const overlayOpen = !!(openAccount || selectedCategory);
+
+  function EntryRow({ e }) {
+    const cat = getCat(e.category);
+    const inflow = isInflow(e);
+    return (
+      <div role="button" tabIndex={0} aria-label={`Edit ${e.description || cat.label}`}
+        onClick={() => setSheet({ entry: e })} onKeyDown={(ev) => ev.key === "Enter" && setSheet({ entry: e })}
+        style={{ background: T.surface, border: `1px solid ${isScheduled(e) ? T.violet + "55" : T.border}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: cat.color + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Icon name={cat.icon} size={17} color={cat.color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {e.description || cat.label}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 3 }}>
+            <span style={{ fontSize: 10, color: cat.color, background: cat.color + "18", borderRadius: 5, padding: "1px 6px", fontWeight: 600 }}>{cat.label}</span>
+            {accountLine(e) && <span style={{ fontSize: 10, color: T.textMuted, background: T.elevated, borderRadius: 5, padding: "1px 6px", fontWeight: 600 }}>{accountLine(e)}</span>}
+            {isScheduled(e) && <span style={{ fontSize: 10, color: T.violet, background: T.violet + "18", borderRadius: 5, padding: "1px 6px", fontWeight: 600 }}>Scheduled</span>}
+          </div>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: inflow ? T.teal : isTransfer(e) ? T.violet : T.text, fontFamily: T.fontMono, whiteSpace: "nowrap" }}>
+          {inflow ? "+" : ""}{money(cur, e.amount)}
+        </div>
+        <Icon name="chev-right" size={14} color={T.textDim} />
+      </div>
+    );
   }
 
   return (
@@ -387,41 +260,120 @@ export default function BudgetPage({ profile, onProfile }) {
       />
 
       <PageScroll>
-        {/* Balance hero card */}
-        <div style={{ margin: "0 20px 14px", background: balance >= 0 ? `linear-gradient(135deg,${T.teal}18,${T.surface})` : `linear-gradient(135deg,${T.negative}18,${T.surface})`, border: `1px solid ${balance >= 0 ? T.teal + "33" : T.negative + "33"}`, borderRadius: T.rCard, padding: "20px 18px" }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 }}>Balance this month</div>
-          <div style={{ fontSize: 36, fontWeight: 800, fontFamily: T.fontMono, color: balance >= 0 ? T.teal : T.negative, letterSpacing: -1, lineHeight: 1, marginBottom: 4 }}>
-            {balance >= 0 ? "+" : "−"}{cur} {Math.abs(balance).toFixed(2)}
+        {/* Everything together: what the banks hold minus what the cards owe */}
+        <div style={{ margin: "0 20px 14px", background: totals.net_worth >= 0 ? `linear-gradient(135deg,${T.teal}18,${T.surface})` : `linear-gradient(135deg,${T.negative}18,${T.surface})`, border: `1px solid ${totals.net_worth >= 0 ? T.teal + "33" : T.negative + "33"}`, borderRadius: T.rCard, padding: "20px 18px" }}>
+          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 }}>Total across your accounts</div>
+          <div style={{ fontSize: 36, fontWeight: 800, fontFamily: T.fontMono, color: totals.net_worth >= 0 ? T.teal : T.negative, letterSpacing: -1, lineHeight: 1, marginBottom: 4 }}>
+            {money(cur, totals.net_worth)}
           </div>
-          {savingsPct > 0 && <div style={{ fontSize: 11, color: T.textMuted }}>{savingsPct}% saved this month</div>}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 14 }}>
-            {[
-              { label: "Income", value: `${cur} ${totalIncome.toFixed(0)}`, color: T.teal },
-              { label: "Spent", value: `${cur} ${totalExpenses.toFixed(0)}`, color: T.negative },
-              { label: "Saved", value: `${cur} ${Math.max(0, balance).toFixed(0)}`, color: "#5C8FFC" },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
-                <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
-              </div>
-            ))}
+          {totals.net_worth_projected !== totals.net_worth && (
+            <div style={{ fontSize: 11, color: T.textMuted }}>After scheduled entries: {money(cur, totals.net_worth_projected)}</div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
+            <Stat label="In the bank" value={money(cur, inBanks, { digits: 0 })} />
+            <span style={{ color: T.textDim, fontSize: 14 }}>−</span>
+            <Stat label="Cards owe" value={money(cur, cardsOwe, { digits: 0 })} color={cardsOwe > 0 ? T.amber : T.textMuted} />
+            <span style={{ color: T.textDim, fontSize: 14 }}>=</span>
+            <Stat label="Total" value={money(cur, totals.net_worth, { digits: 0 })} color={totals.net_worth >= 0 ? T.teal : T.negative} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            {[
-              { label: "Cash balance", value: `${cashBalance >= 0 ? "+" : "−"}${cur} ${Math.abs(cashBalance).toFixed(2)}`, color: cashBalance >= 0 ? T.text : T.negative },
-              { label: "Card to pay", value: `${cur} ${cardToPay.toFixed(2)}`, color: cardToPay > 0 ? T.amber : T.textMuted },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: "rgba(10,11,16,0.3)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: T.fontMono }}>{value}</div>
-                <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
-              </div>
-            ))}
+        </div>
+
+        {/* Accounts */}
+        <div style={{ padding: "0 20px 16px" }}>
+          <SectionHead title="Accounts" trailing={
+            <button onClick={() => setAddingAccount(true)} style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", color: T.teal, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+              <Icon name="plus" size={13} color={T.teal} /> Add
+            </button>
+          } />
+          {!loading && accounts.length === 0 && (
+            <Card style={{ padding: 16, textAlign: "center" }} onClick={() => setAddingAccount(true)}>
+              <div style={{ fontSize: 13, color: T.text, fontWeight: 600, marginBottom: 4 }}>Add your bank accounts and cards</div>
+              <div style={{ fontSize: 12, color: T.textMuted }}>Then you see what each one holds, what the cards owe and the total.</div>
+            </Card>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {accounts.map(a => {
+              const isCard = a.kind === "credit_card";
+              const color = a.balance < 0 ? T.negative : isCard ? T.textMuted : T.teal;
+              return (
+                <Card key={a.id} style={{ padding: "12px 14px" }} onClick={() => setOpenAccountId(a.id)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 11, background: color + "1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <Icon name={accountIcon(a)} size={18} color={color} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{a.name}</div>
+                      <div style={{ fontSize: 10, color: T.textDim, marginTop: 2 }}>
+                        {accountKindLabel(a)}{a.projected !== a.balance ? ` · ${money(cur, a.projected)} after scheduled` : ""}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, fontFamily: T.fontMono, color }}>{money(cur, a.balance)}</div>
+                      {isCard && a.balance < 0 && <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>to pay</div>}
+                    </div>
+                    <Icon name="chev-right" size={14} color={T.textDim} />
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Scheduled, any month */}
+        {scheduled.length > 0 && (
+          <div style={{ padding: "0 20px 16px" }}>
+            <SectionHead title="Scheduled" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {scheduled.map(e => (
+                <div key={e.id}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: T.violet, margin: "0 0 4px 2px" }}>{fmtDay(e.date)}</div>
+                  <EntryRow e={e} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* One month: income, spending, categories, transactions */}
+        <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button onClick={() => setMonth(m => shiftMonth(m, -1))} disabled={month <= firstMonth} aria-label="Previous month"
+              style={{ width: 32, height: 32, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: month <= firstMonth ? "default" : "pointer", opacity: month <= firstMonth ? 0.35 : 1, padding: 0 }}>
+              <Icon name="chev-left" size={14} color={T.text} />
+            </button>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{monthLabel(month)}</div>
+              {month !== thisMonth && (
+                <button onClick={() => setMonth(thisMonth)} style={{ background: "transparent", border: "none", color: T.teal, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Back to this month</button>
+              )}
+            </div>
+            <button onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= lastMonth} aria-label="Next month"
+              style={{ width: 32, height: 32, borderRadius: 9999, background: T.elevated, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: month >= lastMonth ? "default" : "pointer", opacity: month >= lastMonth ? 0.35 : 1, padding: 0 }}>
+              <Icon name="chev-right" size={14} color={T.text} />
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <Stat label="Income" value={money(cur, income, { digits: 0 })} color={T.teal} />
+            <Stat label="Spent" value={money(cur, spent, { digits: 0 })} color={T.amber} />
+            <Stat label="Net" value={money(cur, income - spent, { digits: 0, sign: true })} color={income - spent >= 0 ? T.teal : T.negative} />
+          </div>
+          {accounts.length > 0 && month <= thisMonth && (
+            <div style={{ fontSize: 12, color: T.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 14 }}>
+              Started {monthLabel(month, { month: "long" })} with <b style={{ color: T.text }}>{money(cur, monthStartTotal, { digits: 0 })}</b>
+              {" · "}{month === thisMonth ? "now" : "ended with"} <b style={{ color: T.text }}>{money(cur, monthEndTotal, { digits: 0 })}</b>
+            </div>
+          )}
+          <MonthBars months={history} selected={month} onSelect={setMonth} />
+          <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 8, fontSize: 10, color: T.textDim }}>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: T.teal, marginRight: 4 }} />Income</span>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: T.amber, marginRight: 4 }} />Spent</span>
+            <span>Transfers and card bills aren't spending</span>
           </div>
         </div>
 
         {/* Donut + legend */}
         <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "16px 18px" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 14 }}>Spending by Category</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 14 }}>Spending by category · {monthLabel(month, { month: "short" })}</div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <DonutChart data={catData} active={activeDonut} onSelect={setActiveDonut} cur={cur} />
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -442,23 +394,25 @@ export default function BudgetPage({ profile, onProfile }) {
           </div>
         </div>
 
-        {/* Category progress tiles */}
+        {/* Category budgets: tap one to see it and change its budget */}
         <div style={{ padding: "0 20px 16px" }}>
           <SectionHead title="Category budgets" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {EXPENSE_CATS.map(cat => {
-              const spent = catData[cat.id] || 0;
-              const budget = CAT_BUDGETS[cat.id] || 200;
-              const pct = Math.min(spent / budget, 1);
-              const over = spent > budget;
+              const spentCat = catData[cat.id] || 0;
+              const budget = limits[cat.id] || 0;
+              const pct = budget > 0 ? Math.min(spentCat / budget, 1) : 0;
+              const over = budget > 0 && spentCat > budget;
               return (
-                <div key={cat.id} onClick={() => setSelectedCategory({ ...cat, spent, budget })} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 13px", cursor: "pointer" }}>
+                <div key={cat.id} role="button" tabIndex={0} onClick={() => setSelectedCategory({ ...cat, spent: spentCat, budget })}
+                  onKeyDown={(ev) => ev.key === "Enter" && setSelectedCategory({ ...cat, spent: spentCat, budget })}
+                  style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 13px", cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{cat.label}</span>
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: over ? T.negative : T.text, fontFamily: T.fontMono, marginBottom: 2 }}>
-                    {cur} {spent.toFixed(0)} <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 400 }}>/ {budget}</span>
+                    {cur} {spentCat.toFixed(0)} <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 400 }}>{budget > 0 ? `/ ${budget}` : "· no budget"}</span>
                   </div>
                   <div style={{ height: 4, borderRadius: 9999, background: T.elevated2, overflow: "hidden", marginTop: 6 }}>
                     <div style={{ width: `${pct * 100}%`, height: "100%", background: over ? T.negative : cat.color, borderRadius: 9999 }} />
@@ -469,58 +423,39 @@ export default function BudgetPage({ profile, onProfile }) {
           </div>
         </div>
 
-        {/* Week bar chart */}
-        <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "16px 18px" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 14 }}>This Week</div>
-          <WeekBarsChart bars={(() => {
-            const DAYS_BACK = [6,5,4,3,2,1,0];
-            const today = new Date();
-            return DAYS_BACK.map(d => {
-              const dt = new Date(today); dt.setDate(today.getDate() - d);
-              const iso = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-              return expenseEntries.filter(e => e.date === iso).reduce((s, e) => s + e.amount, 0);
-            });
-          })()} avg={expenseEntries.length > 0 ? totalExpenses / 7 : 0} />
-        </div>
+        {/* The last 7 days */}
+        {month === thisMonth && (() => {
+          const days = [6, 5, 4, 3, 2, 1, 0].map(back => {
+            const dt = new Date(); dt.setDate(dt.getDate() - back);
+            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+          });
+          const bars = days.map(d => sum(entries.filter(e => e.date === d && isSpending(e))));
+          return (
+            <div style={{ margin: "0 20px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.rCard, padding: "16px 18px" }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 14 }}>Last 7 days</div>
+              <WeekBarsChart bars={bars} avg={bars.reduce((s, v) => s + v, 0) / 7}
+                labels={days.map(d => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "narrow" }))} />
+            </div>
+          );
+        })()}
 
-        {/* Transaction history */}
+        {/* Transactions in the month */}
         <div style={{ padding: "0 20px 24px" }}>
-          <SectionHead title="Transactions" />
+          <SectionHead title={`Transactions · ${monthLabel(month, { month: "long" })}`} />
           {loading && <LoadingDots />}
           {!loading && grouped.length === 0 && (
-            <EmptyState icon="budget" title="No transactions" subtitle="Tap + to log your first expense" />
+            <EmptyState icon="budget" title="No transactions" subtitle={month === thisMonth ? "Tap + to log your first expense" : `Nothing logged in ${monthLabel(month)}`} />
           )}
           {grouped.map(([date, items]) => {
-            // Money spent that day; income is not spending.
-            const dayTotal = items.filter(e => !isIncomeEntry(e) && !isCardPayment(e)).reduce((s, e) => s + e.amount, 0);
+            const dayTotal = sum(items.filter(isSpending));
             return (
               <div key={date} style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.3 }}>{fmtDate(date)}</span>
-                  {dayTotal > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {dayTotal.toFixed(2)} spent</span>}
+                  <span style={{ fontSize: 11, fontWeight: 600, color: date > today ? T.violet : T.textMuted, letterSpacing: 0.3 }}>{fmtDay(date)}</span>
+                  {dayTotal > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{money(cur, dayTotal)} spent</span>}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {items.map(e => {
-                    const cat = getCat(e.category);
-                    return (
-                      <div key={e.id} role="button" tabIndex={0} aria-label={`Edit ${e.description || cat.label}`}
-                        onClick={() => setEditEntry(e)} onKeyDown={(ev) => ev.key === "Enter" && setEditEntry(e)}
-                        style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 10, background: cat.color + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          <Icon name={cat.icon} size={17} color={cat.color} />
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.description || cat.label}</div>
-                          <div style={{ fontSize: 10, color: cat.color, background: cat.color + "18", borderRadius: 5, padding: "1px 6px", display: "inline-block", marginTop: 3, fontWeight: 600 }}>{cat.label}</div>
-                          {e.payment_method === "card" && (
-                            <div style={{ fontSize: 10, color: T.amber, background: T.amber + "18", borderRadius: 5, padding: "1px 6px", display: "inline-block", marginTop: 3, marginLeft: 6, fontWeight: 600 }}>Credit card</div>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{cur} {e.amount.toFixed(2)}</div>
-                        <Icon name="chev-right" size={14} color={T.textDim} />
-                      </div>
-                    );
-                  })}
+                  {items.map(e => <EntryRow key={e.id} e={e} />)}
                 </div>
               </div>
             );
@@ -528,18 +463,45 @@ export default function BudgetPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.green} label="Add income or expense" />
-      {showAdd && <AddEntrySheet onClose={() => setShowAdd(false)} onAdded={reload} cur={cur} cardToPay={cardToPay} />}
-      {editEntry && <AddEntrySheet key={editEntry.id} entry={editEntry} onClose={() => setEditEntry(null)} onAdded={reload} cur={cur} cardToPay={cardToPay} />}
+      {!overlayOpen && <Fab onClick={() => setSheet({ preset: null })} icon="plus" color={T.green} label="Add income, expense or transfer" />}
+
+      {openAccount && (
+        <AccountDetailPage
+          account={openAccount}
+          accounts={accounts}
+          entries={entries}
+          cur={cur}
+          onBack={() => setOpenAccountId(null)}
+          onEdit={e => setSheet({ entry: e })}
+          onAdd={preset => setSheet({ preset })}
+          onChanged={reload}
+        />
+      )}
       {selectedCategory && (
         <CategoryDetailPage
           currency={cur}
           category={selectedCategory}
-          entries={expenseEntries.filter((e) => e.category === selectedCategory.id)}
+          month={month}
+          entries={spending.filter(e => e.category === selectedCategory.id)}
           onBack={() => setSelectedCategory(null)}
-          onEdit={setEditEntry}
+          onEdit={e => setSheet({ entry: e })}
+          onSaveBudget={value => saveBudget(selectedCategory.id, value)}
         />
       )}
+      {sheet && (
+        <BudgetEntrySheet
+          key={sheet.entry?.id ?? "new"}
+          entry={sheet.entry || null}
+          preset={sheet.preset || null}
+          accounts={accounts}
+          cur={cur}
+          onClose={() => setSheet(null)}
+          onSaved={reload}
+        />
+      )}
+      <BottomSheet open={addingAccount} onClose={() => setAddingAccount(false)} title="Add account">
+        <AccountForm onSaved={() => { setAddingAccount(false); reload(); }} />
+      </BottomSheet>
     </div>
   );
 }

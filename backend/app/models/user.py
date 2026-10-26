@@ -76,6 +76,9 @@ class User(Base):
         "notes": "",
     })
 
+    # Monthly budget per spending category, e.g. {"food": 400}; empty uses the app's defaults
+    budget_limits = Column(JSON, nullable=True)
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
