@@ -205,12 +205,18 @@ async def _build_full_context(db: AsyncSession, user_id: int, message: str, toda
         .order_by(InventoryItem.category, InventoryItem.name)
     )
     inventory_items = inventory_result.scalars().all()
-    if inventory_items:
+    # "Need to buy" items are not at home, so they must not feed meal ideas
+    in_stock = [i for i in inventory_items if i.status != "need_to_buy"]
+    to_buy = [i for i in inventory_items if i.status == "need_to_buy"]
+    if in_stock:
         inv_lines = ", ".join([
             f"{i.name}" + (f" ({i.quantity}{i.unit})" if i.quantity else "")
-            for i in inventory_items
+            + (" [running low]" if i.status == "running_low" else "")
+            for i in in_stock
         ])
         context += f"\n\nCURRENT PANTRY/INVENTORY: {inv_lines}"
+    if to_buy:
+        context += "\n\nSHOPPING LIST (need to buy, not at home): " + ", ".join(i.name for i in to_buy)
 
     return context
 

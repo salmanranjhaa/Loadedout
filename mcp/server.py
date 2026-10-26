@@ -423,6 +423,9 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "enum": ["protein", "produce", "grains", "dairy", "pantry", "other"],
                     },
+                    "status": {"type": "string", "enum": ["ok", "running_low", "need_to_buy"], "description": "default ok"},
+                    "storage": {"type": "string", "enum": ["pantry", "fridge", "freezer"]},
+                    "notes": {"type": "string"},
                 },
                 "required": ["name", "quantity", "unit", "category"],
             },
@@ -438,6 +441,9 @@ async def list_tools() -> list[Tool]:
                     "quantity": {"description": "numeric"},
                     "unit": {"type": "string"},
                     "category": {"type": "string"},
+                    "status": {"type": "string", "enum": ["ok", "running_low", "need_to_buy"]},
+                    "storage": {"type": "string", "enum": ["pantry", "fridge", "freezer"]},
+                    "notes": {"type": "string"},
                 },
                 "required": ["item_id"],
             },
@@ -1477,7 +1483,7 @@ async def _get_inventory(conn: asyncpg.Connection, user_id: int, args: dict) -> 
     if category:
         rows = await conn.fetch(
             """
-            SELECT id, name, quantity, unit, category, created_at
+            SELECT id, name, quantity, unit, category, status, storage, notes, created_at
             FROM inventory_items WHERE user_id = $1 AND category = $2
             ORDER BY category, name
             """,
@@ -1486,7 +1492,7 @@ async def _get_inventory(conn: asyncpg.Connection, user_id: int, args: dict) -> 
     else:
         rows = await conn.fetch(
             """
-            SELECT id, name, quantity, unit, category, created_at
+            SELECT id, name, quantity, unit, category, status, storage, notes, created_at
             FROM inventory_items WHERE user_id = $1
             ORDER BY category, name
             """,
@@ -1495,18 +1501,33 @@ async def _get_inventory(conn: asyncpg.Connection, user_id: int, args: dict) -> 
     return {"items": [_serialize(r) for r in rows], "count": len(rows)}
 
 
+def _inventory_status(value: str) -> str:
+    if value not in {"ok", "running_low", "need_to_buy"}:
+        raise ValueError("status must be ok, running_low or need_to_buy")
+    return value
+
+
+def _inventory_storage(value: Optional[str]) -> Optional[str]:
+    if value and value not in {"pantry", "fridge", "freezer"}:
+        raise ValueError("storage must be pantry, fridge or freezer")
+    return value or None
+
+
 async def _add_inventory_item(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     row = await conn.fetchrow(
         """
-        INSERT INTO inventory_items (user_id, name, quantity, unit, category)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, name, quantity, unit, category
+        INSERT INTO inventory_items (user_id, name, quantity, unit, category, status, storage, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, name, quantity, unit, category, status, storage, notes
         """,
         user_id,
         args["name"],
         _f(args["quantity"]),
         args["unit"],
         args["category"],
+        _inventory_status(args.get("status") or "ok"),
+        _inventory_storage(args.get("storage")),
+        args.get("notes") or None,
     )
     return {"status": "added", "item": _serialize(row)}
 
@@ -1520,13 +1541,21 @@ async def _update_inventory_item(conn: asyncpg.Connection, user_id: int, args: d
     if not exists:
         raise ValueError(f"Inventory item {item_id} not found for this user.")
 
-    cols = ["name", "quantity", "unit", "category"]
+    clean = {
+        "name": lambda v: v,
+        "quantity": _f,  # clients may send "300"; the column is numeric
+        "unit": lambda v: v,
+        "category": lambda v: v,
+        "status": _inventory_status,
+        "storage": _inventory_storage,
+        "notes": lambda v: v or None,
+    }
     updates, values = [], []
     idx = 1
-    for col in cols:
+    for col, fix in clean.items():
         if col in args and args[col] is not None:
             updates.append(f"{col} = ${idx}")
-            values.append(args[col])
+            values.append(fix(args[col]))
             idx += 1
 
     if not updates:

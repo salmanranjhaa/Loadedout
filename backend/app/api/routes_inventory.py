@@ -2,8 +2,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Annotated, Literal, Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.limiter import limiter
@@ -20,20 +20,31 @@ VALID_CATEGORIES = {
 VALID_UNITS = {"g", "kg", "pieces", "tbsp", "tsp", "cups", "L", "ml", "cans", "portions"}
 
 
+Quantity = Annotated[float, Field(ge=0)]  # 0 is fine: "Need to buy"
+Status = Literal["ok", "running_low", "need_to_buy"]
+Storage = Literal["pantry", "fridge", "freezer"]
+
+
 class InventoryItemCreate(BaseModel):
-    name: str
-    quantity: Optional[float] = None
+    name: str = Field(min_length=1, max_length=100)
+    quantity: Optional[Quantity] = None
     unit: Optional[str] = None
     category: Optional[str] = "other"
     expiry_date: Optional[date] = None
+    status: Status = "ok"
+    storage: Optional[Storage] = None
+    notes: Optional[str] = None
 
 
 class InventoryItemUpdate(BaseModel):
-    name: Optional[str] = None
-    quantity: Optional[float] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    quantity: Optional[Quantity] = None
     unit: Optional[str] = None
     category: Optional[str] = None
     expiry_date: Optional[date] = None
+    status: Optional[Status] = None
+    storage: Optional[Storage] = None
+    notes: Optional[str] = None
 
 
 @router.get("/")
@@ -69,6 +80,9 @@ async def add_inventory_item(
         unit=item.unit,
         category=item.category if item.category in VALID_CATEGORIES else "other",
         expiry_date=item.expiry_date,
+        status=item.status,
+        storage=item.storage,
+        notes=(item.notes or "").strip() or None,
     )
     db.add(new_item)
     await db.commit()
@@ -104,8 +118,16 @@ async def update_inventory_item(
         item.unit = updates.unit
     if updates.category is not None:
         item.category = updates.category if updates.category in VALID_CATEGORIES else "other"
-    if updates.expiry_date is not None:
+    if updates.status is not None:
+        item.status = updates.status
+    # These three can be cleared: sending null (or empty notes) removes them
+    sent = updates.model_fields_set
+    if "expiry_date" in sent:
         item.expiry_date = updates.expiry_date
+    if "storage" in sent:
+        item.storage = updates.storage
+    if "notes" in sent:
+        item.notes = (updates.notes or "").strip() or None
 
     await db.commit()
     await db.refresh(item)
@@ -150,4 +172,7 @@ def _fmt(i: InventoryItem) -> dict:
         "category": i.category or "other",
         "expiry_date": i.expiry_date.isoformat() if i.expiry_date else None,
         "days_until_expiry": _days_until_expiry(i.expiry_date),
+        "status": i.status or "ok",
+        "storage": i.storage,
+        "notes": i.notes,
     }
