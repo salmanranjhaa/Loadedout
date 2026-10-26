@@ -230,6 +230,7 @@ async def list_tools() -> list[Tool]:
                     "start_time": {"type": "string", "description": "HH:MM"},
                     "end_time": {"type": "string", "description": "HH:MM"},
                     "day_of_week": { "minimum": 0, "maximum": 6},
+                    "event_type": {"type": "string"},
                     "description": {"type": "string"},
                     "location": {"type": "string"},
                     "event_data": {"type": "object"},
@@ -714,6 +715,161 @@ async def list_tools() -> list[Tool]:
                 "required": ["exercise_name", "weight_kg", "reps"],
             },
         ),
+        Tool(
+            name="update_expense",
+            description=(
+                "Change a budget entry by its ID (from get_expenses). Send only what changes. "
+                "Income, savings and card_payment entries are always cash."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "expense_id": {"description": "numeric"},
+                    "amount": {"description": "numeric, above 0"},
+                    "category": {
+                        "type": "string",
+                        "enum": ["food", "rent", "transport", "fitness", "fun", "other", "income", "savings", "card_payment"],
+                    },
+                    "payment_method": {"type": "string", "enum": ["cash", "card"]},
+                    "description": {"type": "string"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                },
+                "required": ["expense_id"],
+            },
+        ),
+        Tool(
+            name="delete_expense",
+            description="Delete a budget entry (expense, income, savings or card payment) by its ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {"expense_id": {"description": "numeric"}},
+                "required": ["expense_id"],
+            },
+        ),
+        Tool(
+            name="update_meal_log",
+            description="Change a logged meal by its ID (from get_meal_log). Send only what changes; date moves it to another day.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "log_id": {"description": "numeric"},
+                    "name": {"type": "string"},
+                    "meal_type": {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"]},
+                    "calories": {"description": "numeric, 0 or more"},
+                    "protein_g": {"description": "numeric, 0 or more"},
+                    "carbs_g": {"description": "numeric, 0 or more"},
+                    "fat_g": {"description": "numeric, 0 or more"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["log_id"],
+            },
+        ),
+        Tool(
+            name="delete_meal_template",
+            description="Delete a saved meal template by its ID (from get_meal_templates).",
+            inputSchema={
+                "type": "object",
+                "properties": {"template_id": {"description": "numeric"}},
+                "required": ["template_id"],
+            },
+        ),
+        Tool(
+            name="update_workout",
+            description=(
+                "Change a logged workout by its ID (from get_workouts). Send only what changes. "
+                "exercises replaces the whole exercise list, in the same shape as log_workout."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workout_id": {"description": "numeric"},
+                    "name": {"type": "string"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "workout_type": {"type": "string"},
+                    "duration_minutes": {"description": "numeric, 1 or more"},
+                    "intensity": {"type": "string"},
+                    "description": {"type": "string"},
+                    "calories_burned_est": {"description": "numeric"},
+                    "energy_level": {"description": "numeric 1-10"},
+                    "exercises": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["workout_id"],
+            },
+        ),
+        Tool(
+            name="delete_workout",
+            description="Delete a logged workout by its ID (from get_workouts).",
+            inputSchema={
+                "type": "object",
+                "properties": {"workout_id": {"description": "numeric"}},
+                "required": ["workout_id"],
+            },
+        ),
+        Tool(
+            name="update_workout_template",
+            description="Change a workout template by its ID (from get_workout_templates). exercises replaces the whole list.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "template_id": {"description": "numeric"},
+                    "name": {"type": "string"},
+                    "workout_type": {"type": "string"},
+                    "estimated_duration": {"description": "numeric minutes"},
+                    "description": {"type": "string"},
+                    "exercises": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["template_id"],
+            },
+        ),
+        Tool(
+            name="delete_workout_template",
+            description="Delete a workout template by its ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {"template_id": {"description": "numeric"}},
+                "required": ["template_id"],
+            },
+        ),
+        Tool(
+            name="delete_body_weight",
+            description=(
+                "Delete the body weight entry for a day. To change one, call log_body_weight "
+                "for that date (one entry per day)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"date": {"type": "string", "description": "YYYY-MM-DD"}},
+                "required": ["date"],
+            },
+        ),
+        Tool(
+            name="update_personal_record",
+            description=(
+                "Correct a stored PR exactly as given (unlike upsert_personal_record, it can "
+                "lower the weight). Send only what changes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "exercise_name": {"type": "string"},
+                    "weight_kg": {"description": "numeric"},
+                    "reps": {"description": "numeric"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["exercise_name"],
+            },
+        ),
+        Tool(
+            name="delete_personal_record",
+            description="Delete the stored PR for an exercise.",
+            inputSchema={
+                "type": "object",
+                "properties": {"exercise_name": {"type": "string"}},
+                "required": ["exercise_name"],
+            },
+        ),
     ]
 
 
@@ -831,6 +987,10 @@ async def _dispatch(name: str, args: dict, conn: asyncpg.Connection, user_id: in
 
     if name == "upsert_personal_record":
         return await _upsert_personal_record(conn, user_id, args)
+
+    handler = EDIT_HANDLERS.get(name)
+    if handler:
+        return await handler(conn, user_id, args)
 
     raise ValueError(f"Unknown tool: {name}")
 
@@ -1012,6 +1172,7 @@ async def _add_schedule_event(conn: asyncpg.Connection, user_id: int, args: dict
     # proper time instances, not raw strings, even with ::time casts in the query.
     start_time = _parse_time(args["start_time"])
     end_time = _parse_time(args["end_time"])
+    _require_end_after_start(start_time, end_time)
 
     row = await conn.fetchrow(
         """
@@ -1030,7 +1191,7 @@ async def _add_schedule_event(conn: asyncpg.Connection, user_id: int, args: dict
         start_time,
         end_time,
         args.get("location"),
-        args.get("recurrence", "weekly"),
+        (args.get("recurrence") or "weekly").upper(),  # the enum stores WEEKLY / BIWEEKLY / ONCE
         specific_date,
         json.dumps(args.get("event_data", {})),
     )
@@ -1048,11 +1209,24 @@ async def _update_schedule_event(conn: asyncpg.Connection, user_id: int, args: d
     if not exists:
         raise ValueError(f"Event {event_id} not found or does not belong to this user.")
 
+    if args.get("start_time") or args.get("end_time"):
+        current = await conn.fetchrow("SELECT start_time, end_time FROM schedule_events WHERE id = $1", event_id)
+        _require_end_after_start(
+            _parse_time(args["start_time"]) if args.get("start_time") else current["start_time"],
+            _parse_time(args["end_time"]) if args.get("end_time") else current["end_time"],
+        )
+    args = dict(args)
+    if args.get("event_type"):
+        args["event_type"] = args["event_type"].upper()
+    if args.get("day_of_week") is not None:
+        args["day_of_week"] = _i(args["day_of_week"])
+
     field_map = {
         "title": ("title", "text"),
         "description": ("description", "text"),
         "location": ("location", "text"),
         "day_of_week": ("day_of_week", "int"),
+        "event_type": ("event_type", "text"),
         "is_active": ("is_active", "bool"),
     }
     time_fields = {"start_time", "end_time"}
@@ -1181,16 +1355,19 @@ async def _update_meal_template(conn: asyncpg.Connection, user_id: int, args: di
     if not exists:
         raise ValueError(f"Template {template_id} not found or does not belong to this user.")
 
-    simple_cols = ["name", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g",
-                   "prep_instructions", "prep_time_minutes", "is_active"]
+    simple_cols = {
+        "name": str, "meal_type": str, "prep_instructions": str, "is_active": bool,
+        "calories": _non_negative, "protein_g": _non_negative, "carbs_g": _non_negative,
+        "fat_g": _non_negative, "fiber_g": _non_negative, "prep_time_minutes": _i,
+    }
     updates = []
     values = []
     idx = 1
 
-    for col in simple_cols:
+    for col, fix in simple_cols.items():
         if col in args and args[col] is not None:
             updates.append(f"{col} = ${idx}")
-            values.append(args[col])
+            values.append(fix(args[col]) if fix is not str else args[col])
             idx += 1
 
     if "ingredients" in args and args["ingredients"] is not None:
@@ -1412,7 +1589,7 @@ async def _log_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> di
         log_date,
         # only purchases can sit on the card; income and card payments are cash
         "card" if args.get("payment_method") == "card"
-        and args["category"].lower() not in ("income", "savings", "card_payment") else "cash",
+        and args["category"].lower() not in NON_SPENDING else "cash",
     )
     return {"status": "logged", "entry": _serialize(row)}
 
@@ -1637,7 +1814,7 @@ async def _get_body_weight_history(conn: asyncpg.Connection, user_id: int, args:
     start = date_cls.today() - timedelta(days=days)
     rows = await conn.fetch(
         """
-        SELECT date, weight_kg, notes
+        SELECT id, date, weight_kg, notes
         FROM weight_logs
         WHERE user_id = $1 AND date >= $2
         ORDER BY date ASC
@@ -1766,7 +1943,7 @@ async def _update_supplements(conn: asyncpg.Connection, user_id: int, args: dict
 async def _get_personal_records(conn: asyncpg.Connection, user_id: int) -> dict:
     rows = await conn.fetch(
         """
-        SELECT exercise_name, weight_kg, reps, date, notes
+        SELECT id, exercise_name, weight_kg, reps, date, notes
         FROM personal_records WHERE user_id = $1
         ORDER BY weight_kg DESC
         """,
@@ -1805,6 +1982,240 @@ async def _upsert_personal_record(conn: asyncpg.Connection, user_id: int, args: 
         user_id, args["exercise_name"], weight, reps, pr_date, args.get("notes"),
     )
     return {"status": "created", "exercise_name": args["exercise_name"], "weight_kg": weight, "reps": reps}
+
+
+# ---- Edit and delete handlers (the app can change everything; so can Claude) ----
+
+NON_SPENDING = {"income", "savings", "card_payment"}
+
+
+def _require_end_after_start(start, end) -> None:
+    if start is not None and end is not None and end <= start:
+        raise ValueError("End time must be after the start time.")
+
+
+def _non_negative(value) -> float:
+    number = _f(value)
+    if number is None or number < 0:
+        raise ValueError("Amounts must be numbers of 0 or more.")
+    return number
+
+
+async def _update_owned(conn: asyncpg.Connection, table: str, row_id: int, user_id: int,
+                        values: dict, jsonb: tuple = ()) -> dict:
+    """I update the given columns of one row the user owns."""
+    if not values:
+        return {"status": "no_changes"}
+    sets = [f"{col} = ${i}" + ("::jsonb" if col in jsonb else "") for i, col in enumerate(values, start=1)]
+    n = len(values)
+    result = await conn.execute(
+        f"UPDATE {table} SET {', '.join(sets)} WHERE id = ${n + 1} AND user_id = ${n + 2}",
+        *values.values(), row_id, user_id,
+    )
+    if result == "UPDATE 0":
+        raise ValueError(f"No {table} entry {row_id} for this user.")
+    return {"status": "updated", "id": row_id}
+
+
+async def _delete_owned(conn: asyncpg.Connection, table: str, row_id: int, user_id: int) -> dict:
+    result = await conn.execute(f"DELETE FROM {table} WHERE id = $1 AND user_id = $2", row_id, user_id)
+    if result == "DELETE 0":
+        raise ValueError(f"No {table} entry {row_id} for this user.")
+    return {"status": "deleted", "id": row_id}
+
+
+async def _update_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    entry_id = _i(args["expense_id"])
+    current = await conn.fetchrow(
+        "SELECT category FROM budget_entries WHERE id = $1 AND user_id = $2", entry_id, user_id,
+    )
+    if not current:
+        raise ValueError(f"No budget entry {entry_id} for this user.")
+    values = {}
+    if args.get("amount") is not None:
+        amount = _f(args["amount"])
+        if amount is None or amount <= 0:
+            raise ValueError("amount must be above 0.")
+        values["amount"] = round(amount, 2)
+    if args.get("category"):
+        values["category"] = args["category"].lower()
+    if "description" in args:
+        values["description"] = args["description"] or None
+    if args.get("date"):
+        values["date"] = date_cls.fromisoformat(args["date"])
+    if args.get("payment_method"):
+        if args["payment_method"] not in ("cash", "card"):
+            raise ValueError("payment_method must be cash or card.")
+        values["payment_method"] = args["payment_method"]
+    # Same rule as adding: only purchases can sit on the card
+    if values and values.get("category", current["category"]) in NON_SPENDING:
+        values["payment_method"] = "cash"
+    return await _update_owned(conn, "budget_entries", entry_id, user_id, values)
+
+
+async def _delete_expense(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    return await _delete_owned(conn, "budget_entries", _i(args["expense_id"]), user_id)
+
+
+async def _update_meal_log(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    values = {}
+    for col in ("name", "meal_type"):
+        if args.get(col):
+            values[col] = args[col]
+    for col in ("calories", "protein_g", "carbs_g", "fat_g"):
+        if args.get(col) is not None:
+            values[col] = _non_negative(args[col])
+    if args.get("date"):
+        values["date"] = date_cls.fromisoformat(args["date"])
+    if "notes" in args:
+        values["notes"] = args["notes"] or None
+    return await _update_owned(conn, "meal_logs", _i(args["log_id"]), user_id, values)
+
+
+async def _delete_meal_template(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    template_id = _i(args["template_id"])
+    # Soft delete, like the app: meals logged from it keep their link
+    result = await conn.execute(
+        "UPDATE meal_templates SET is_active = false WHERE id = $1 AND user_id = $2 AND is_active = true",
+        template_id, user_id,
+    )
+    if result == "UPDATE 0":
+        raise ValueError(f"No meal template {template_id} for this user.")
+    return {"status": "deleted", "id": template_id}
+
+
+async def _update_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    workout_id = _i(args["workout_id"])
+    current = await conn.fetchrow(
+        "SELECT details FROM workout_logs WHERE id = $1 AND user_id = $2", workout_id, user_id,
+    )
+    if not current:
+        raise ValueError(f"No workout {workout_id} for this user.")
+    values = {}
+    if args.get("date"):
+        values["date"] = date_cls.fromisoformat(args["date"])
+    if args.get("workout_type"):
+        values["workout_type"] = args["workout_type"].lower()
+    if args.get("duration_minutes") is not None:
+        minutes = _i(args["duration_minutes"])
+        if not minutes or minutes < 1:
+            raise ValueError("duration_minutes must be 1 or more.")
+        values["duration_minutes"] = minutes
+    if args.get("intensity"):
+        values["intensity"] = args["intensity"]
+    if "description" in args:
+        values["notes"] = args["description"] or None
+    for col in ("calories_burned_est", "energy_level"):
+        if args.get(col) is not None:
+            values[col] = _i(args[col])
+    # The name and the sets live in details, next to anything else stored there.
+    # ponytail: the phone keeps a local copy of live sessions matched by date and
+    # name; a date moved here can show that copy again on the recording phone.
+    if args.get("name") is not None or args.get("exercises") is not None:
+        details = current["details"]
+        details = json.loads(details) if isinstance(details, str) else dict(details or {})
+        if args.get("name") is not None:
+            details["name"] = args["name"]
+        if args.get("exercises") is not None:
+            normalized = _normalize_workout_exercises(args["exercises"])
+            details["exercises"] = normalized
+            details["total_volume_kg"] = round(sum(
+                (s.get("weight_kg") or 0) * (s.get("reps") or 0)
+                for ex in normalized for s in ex["sets"]
+            ))
+        values["details"] = json.dumps(details)
+    return await _update_owned(conn, "workout_logs", workout_id, user_id, values, jsonb=("details",))
+
+
+async def _delete_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    workout_id = _i(args["workout_id"])
+    async with conn.transaction():
+        owned = await conn.fetchval(
+            "SELECT id FROM workout_logs WHERE id = $1 AND user_id = $2", workout_id, user_id,
+        )
+        if not owned:
+            raise ValueError(f"No workout {workout_id} for this user.")
+        # workout_sets points at the log without ON DELETE CASCADE
+        await conn.execute("DELETE FROM workout_sets WHERE workout_log_id = $1", workout_id)
+        await conn.execute("DELETE FROM workout_logs WHERE id = $1", workout_id)
+    return {"status": "deleted", "id": workout_id}
+
+
+async def _update_workout_template(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    values = {}
+    if args.get("name"):
+        values["name"] = args["name"]
+    if args.get("workout_type"):
+        values["workout_type"] = args["workout_type"].lower()
+    if args.get("estimated_duration") is not None:
+        values["estimated_duration"] = _i(args["estimated_duration"])
+    if "description" in args:
+        values["description"] = args["description"] or None
+    if args.get("exercises") is not None:
+        values["exercises"] = json.dumps(args["exercises"])
+    return await _update_owned(conn, "workout_templates", _i(args["template_id"]), user_id, values, jsonb=("exercises",))
+
+
+async def _delete_workout_template(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    return await _delete_owned(conn, "workout_templates", _i(args["template_id"]), user_id)
+
+
+async def _delete_body_weight(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    day = date_cls.fromisoformat(args["date"])
+    result = await conn.execute("DELETE FROM weight_logs WHERE user_id = $1 AND date = $2", user_id, day)
+    if result == "DELETE 0":
+        raise ValueError(f"No body weight entry on {day} for this user.")
+    # The profile's current weight follows the latest remaining entry
+    latest = await conn.fetchval(
+        "SELECT weight_kg FROM weight_logs WHERE user_id = $1 ORDER BY date DESC LIMIT 1", user_id,
+    )
+    if latest is not None:
+        await conn.execute("UPDATE users SET current_weight_kg = $1, updated_at = now() WHERE id = $2", latest, user_id)
+    return {"status": "deleted", "date": str(day), "current_weight_kg": latest}
+
+
+async def _update_personal_record(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    record_id = await conn.fetchval(
+        "SELECT id FROM personal_records WHERE user_id = $1 AND exercise_name = $2",
+        user_id, args["exercise_name"],
+    )
+    if not record_id:
+        raise ValueError(f"No PR stored for {args['exercise_name']}.")
+    values = {}
+    if args.get("weight_kg") is not None:
+        values["weight_kg"] = _non_negative(args["weight_kg"])
+    if args.get("reps") is not None:
+        values["reps"] = _i(args["reps"])
+    if args.get("date"):
+        values["date"] = date_cls.fromisoformat(args["date"])
+    if "notes" in args:
+        values["notes"] = args["notes"] or None
+    return await _update_owned(conn, "personal_records", record_id, user_id, values)
+
+
+async def _delete_personal_record(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    result = await conn.execute(
+        "DELETE FROM personal_records WHERE user_id = $1 AND exercise_name = $2",
+        user_id, args["exercise_name"],
+    )
+    if result == "DELETE 0":
+        raise ValueError(f"No PR stored for {args['exercise_name']}.")
+    return {"status": "deleted", "exercise_name": args["exercise_name"]}
+
+
+EDIT_HANDLERS = {
+    "update_expense": _update_expense,
+    "delete_expense": _delete_expense,
+    "update_meal_log": _update_meal_log,
+    "delete_meal_template": _delete_meal_template,
+    "update_workout": _update_workout,
+    "delete_workout": _delete_workout,
+    "update_workout_template": _update_workout_template,
+    "delete_workout_template": _delete_workout_template,
+    "delete_body_weight": _delete_body_weight,
+    "update_personal_record": _update_personal_record,
+    "delete_personal_record": _delete_personal_record,
+}
 
 
 # ---- Starlette ASGI app: Streamable HTTP behind a personal key ----
