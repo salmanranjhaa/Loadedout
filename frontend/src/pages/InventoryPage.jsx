@@ -6,9 +6,11 @@ import { Fab, PageHeader, PageScroll, SectionHead, EmptyState, LoadingDots, Hint
 import { inventoryAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import PantryDetailPage from "./details/PantryDetailPage";
+import { CAT_MAP, catOf, getCatMeta, STATUSES, statusMeta, STORAGES, storageMeta, UNITS } from "../utils/pantry";
 
 const FILTER_CATS = [
   { id: "all",     label: "All",     color: T.orange   },
+  { id: "tobuy",   label: "To buy",  color: T.negative },
   { id: "protein", label: "Protein", color: T.negative },
   { id: "produce", label: "Produce", color: "#5FC87A" },
   { id: "grains",  label: "Grains",  color: T.amber  },
@@ -16,35 +18,37 @@ const FILTER_CATS = [
   { id: "pantry",  label: "Pantry",  color: T.violet },
 ];
 
-const CAT_MAP = {
-  protein: { label: "Protein", color: T.negative },
-  produce: { label: "Produce", color: "#5FC87A"  },
-  grains:  { label: "Grains",  color: T.amber    },
-  dairy:   { label: "Dairy",   color: "#5C8FFC"  },
-  pantry:  { label: "Pantry",  color: T.violet   },
-  other:   { label: "Other",   color: T.textMuted },
-};
+// "To buy" collects what needs a shop: need to buy, and running low
+const isToBuy = (i) => i.status === "need_to_buy" || i.status === "running_low";
+const matches = (i, filter) => filter === "all" || (filter === "tobuy" ? isToBuy(i) : catOf(i) === filter);
 
-function getCatMeta(id) { return CAT_MAP[id] || CAT_MAP.other; }
-
-// Items added through the MCP tool before the categories were aligned use
-// these older names; show them under the matching Pantry category.
-const CAT_ALIAS = { carbs: "grains", veggies: "produce", spices: "pantry", fats: "pantry" };
-function catOf(item) { return CAT_ALIAS[item.category] || item.category || "other"; }
+function ChipRow({ options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+      {options.map((o) => (
+        <button key={o.id || "none"} onClick={() => onChange(o.id)} aria-pressed={value === o.id}
+          style={{ padding: "6px 12px", borderRadius: 9999, background: value === o.id ? o.color + "22" : T.elevated, border: `1px solid ${value === o.id ? o.color + "55" : T.border}`, color: value === o.id ? o.color : T.textMuted, fontSize: 12, fontWeight: value === o.id ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function AddItemSheet({ onClose, onAdded }) {
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
   const [unit, setUnit] = useState("g");
   const [cat, setCat] = useState("protein");
+  const [status, setStatus] = useState("ok");
+  const [storage, setStorage] = useState("");
   const [saving, setSaving] = useState(false);
-  const UNITS = ["g", "kg", "pieces", "cans", "L", "ml", "portions", "tbsp"];
 
   async function handleSave() {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await inventoryAPI.add({ name: name.trim(), quantity: qty ? Number(qty) : null, unit, category: cat });
+      await inventoryAPI.add({ name: name.trim(), quantity: qty ? Number(qty) : null, unit, category: cat, status, storage: storage || null });
       onAdded();
       onClose();
       showToast(`${name.trim()} added to your pantry`, "success");
@@ -73,6 +77,7 @@ function AddItemSheet({ onClose, onAdded }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <input
             type="number"
+            inputMode="decimal"
             value={qty}
             onChange={e => setQty(e.target.value)}
             placeholder="Qty"
@@ -87,13 +92,10 @@ function AddItemSheet({ onClose, onAdded }) {
             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
-          {Object.entries(CAT_MAP).filter(([k]) => k !== "other").map(([id, meta]) => (
-            <button key={id} onClick={() => setCat(id)} style={{ padding: "6px 12px", borderRadius: 9999, background: cat === id ? meta.color + "22" : T.elevated, border: `1px solid ${cat === id ? meta.color + "55" : T.border}`, color: cat === id ? meta.color : T.textMuted, fontSize: 12, fontWeight: cat === id ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
-              {meta.label}
-            </button>
-          ))}
-        </div>
+        <ChipRow options={Object.entries(CAT_MAP).filter(([k]) => k !== "other").map(([id, m]) => ({ id, ...m }))} value={cat} onChange={setCat} />
+        <ChipRow options={STATUSES} value={status} onChange={setStatus} />
+        <ChipRow options={[{ id: "", label: "Storage not set", color: T.textMuted }, ...STORAGES]} value={storage} onChange={setStorage} />
+        <div style={{ height: 4 }} />
         <button onClick={handleSave} disabled={saving || !name.trim()} style={{ width: "100%", padding: "13px 0", background: T.orange, color: "#0A0A0F", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving || !name.trim() ? "not-allowed" : "pointer", opacity: saving || !name.trim() ? 0.5 : 1, fontFamily: "inherit" }}>
           {saving ? "Adding…" : "Add to Pantry"}
         </button>
@@ -105,7 +107,9 @@ function AddItemSheet({ onClose, onAdded }) {
 
 function ItemCard({ item, onClick }) {
   const cat = getCatMeta(catOf(item));
-  const daysLeft = item.expiry_days;
+  const status = statusMeta(item.status);
+  const storage = storageMeta(item.storage);
+  const daysLeft = item.days_until_expiry;
   const isExpiring = daysLeft != null && daysLeft <= 3;
 
   return (
@@ -115,13 +119,19 @@ function ItemCard({ item, onClick }) {
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, color: cat.color, background: cat.color + "1A", padding: "2px 7px", borderRadius: 5 }}>
             {cat.label.toUpperCase()}
           </span>
+          {status.id !== "ok" && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: status.color, background: status.color + "1A", padding: "2px 7px", borderRadius: 5 }}>
+              {status.label}
+            </span>
+          )}
+          {storage && <span style={{ fontSize: 10, color: T.textMuted }}>{storage.label}</span>}
         </div>
         <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: daysLeft != null ? 4 : 0 }}>{item.name}</div>
         {daysLeft != null && (
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: isExpiring ? T.amber : T.textDim, flexShrink: 0 }} />
             <span style={{ fontSize: 11, color: isExpiring ? T.amber : T.textMuted, fontWeight: isExpiring ? 600 : 400 }}>
-              {isExpiring ? `Expires in ${daysLeft}d` : `Expires in ${daysLeft}d`}
+              {daysLeft < 0 ? "Expired" : daysLeft === 0 ? "Expires today" : `Expires in ${daysLeft}d`}
             </span>
           </div>
         )}
@@ -166,21 +176,14 @@ export default function InventoryPage({ profile, onProfile }) {
     } catch {}
   }
 
-  const countByFilter = {
-    all: items.length,
-    protein: items.filter(i => catOf(i) === "protein").length,
-    produce: items.filter(i => catOf(i) === "produce").length,
-    grains:  items.filter(i => catOf(i) === "grains").length,
-    dairy:   items.filter(i => catOf(i) === "dairy").length,
-    pantry:  items.filter(i => catOf(i) === "pantry").length,
-  };
+  const countByFilter = Object.fromEntries(FILTER_CATS.map(c => [c.id, items.filter(i => matches(i, c.id)).length]));
 
-  const filtered = filter === "all" ? items : items.filter(i => catOf(i) === filter);
+  const filtered = items.filter(i => matches(i, filter));
 
   // Sort: expiring soon first
   const sorted = [...filtered].sort((a, b) => {
-    const da = a.expiry_days ?? 9999;
-    const db = b.expiry_days ?? 9999;
+    const da = a.days_until_expiry ?? 9999;
+    const db = b.days_until_expiry ?? 9999;
     return da - db;
   });
 
@@ -233,7 +236,7 @@ export default function InventoryPage({ profile, onProfile }) {
         <div style={{ padding: "0 20px 24px" }}>
           {loading && <LoadingDots />}
           {!loading && sorted.length === 0 && (
-            <EmptyState icon="pantry" title="Nothing here" subtitle={filter === "all" ? "Tap + to add what's in your kitchen" : "No items in this category"} />
+            <EmptyState icon="pantry" title="Nothing here" subtitle={filter === "all" ? "Tap + to add what's in your kitchen" : filter === "tobuy" ? "Nothing to buy right now" : "No items in this category"} />
           )}
           {sorted.map(item => (
             <ItemCard key={item.id} item={item} onClick={() => setSelectedItem(item)} />
@@ -241,17 +244,14 @@ export default function InventoryPage({ profile, onProfile }) {
         </div>
       </PageScroll>
 
-      <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} label="Add pantry item" />
+      {!selectedItem && <Fab onClick={() => setShowAdd(true)} icon="plus" color={T.orange} label="Add pantry item" />}
       {showAdd && <AddItemSheet onClose={() => setShowAdd(false)} onAdded={reload} />}
       {selectedItem && (
         <PantryDetailPage
-          item={{
-            ...selectedItem,
-            category: getCatMeta(catOf(selectedItem)).label,
-            expiry_days: selectedItem.expiry_days,
-          }}
+          key={selectedItem.id}
+          item={selectedItem}
           onBack={() => setSelectedItem(null)}
-          onChanged={reload}
+          onSaved={(updated) => setItems(prev => prev.map(i => i.id === updated.id ? updated : i))}
           onDelete={() => removeItem(selectedItem)}
         />
       )}
