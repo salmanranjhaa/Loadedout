@@ -14,7 +14,7 @@ import asyncio
 import os
 import sys
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -181,7 +181,8 @@ def test_sync_imports_runs_and_health_with_the_owners_key_only(monkeypatch=None)
         run(Session, logged_first)
 
         result = run(Session, lambda s: garmin.sync_user(s, 1))
-        assert result == {"activities_added": 1, "linked": 1, "health_days": 1}, result
+        assert (result["activities_added"], result["linked"], result["health_days"]) == (1, 1, 1), result
+        assert result["health_next_from"] == str(TODAY - timedelta(days=1)) and "note" not in result, result
 
         async def check(s):
             w = (await s.execute(select(WorkoutLog))).scalar_one()
@@ -203,6 +204,41 @@ def test_sync_imports_runs_and_health_with_the_owners_key_only(monkeypatch=None)
             raise AssertionError("user 2 synced with user 1's key")
         except garmin.GarminError as e:
             assert e.key_problem
+    finally:
+        garmin.settings.GARMIN_API_KEY, garmin.settings.GARMIN_API_KEY_USER_ID, garmin.Garmin, garmin.parse_fit = saved
+
+
+class SlowDownGarmin(FakeGarmin):
+    """Says 429 once, ten days back into the health sync."""
+    limited = True
+
+    async def get(self, path, raw=False, **params):
+        if "dailySleep" in path and params["date"] == TODAY - timedelta(days=10) and SlowDownGarmin.limited:
+            SlowDownGarmin.limited = False
+            raise garmin.GarminError(garmin.SLOW_DOWN, rate_limited=True)
+        return await super().get(path, raw, **params)
+
+
+def test_slow_down_keeps_what_came_in_and_the_next_sync_carries_on():
+    Session = make_db()
+    saved = (garmin.settings.GARMIN_API_KEY, garmin.settings.GARMIN_API_KEY_USER_ID, garmin.Garmin, garmin.parse_fit)
+    garmin.settings.GARMIN_API_KEY, garmin.settings.GARMIN_API_KEY_USER_ID = "server-key", 1
+    garmin.Garmin, garmin.parse_fit = SlowDownGarmin, lambda data, foot, floors: {}
+    try:
+        first = run(Session, lambda s: garmin.sync_user(s, 1))
+        assert first["activities_added"] == 1 and first["note"] == garmin.SLOW_DOWN, first
+        assert first["health_next_from"] == str(TODAY - timedelta(days=10)), first
+
+        async def conn(s):
+            return (await s.execute(select(GarminConnection))).scalar_one()
+        c = run(Session, conn)
+        assert c.status == "ok" and c.last_sync_at is None and garmin._due(c)        # back in 10 minutes
+
+        second = run(Session, lambda s: garmin.sync_user(s, 1))
+        assert second["activities_added"] == 0 and second["health_days"] == 1 and "note" not in second, second
+        assert second["health_next_from"] == str(TODAY - timedelta(days=1))
+        c = run(Session, conn)
+        assert c.last_sync_at is not None and not garmin._due(c)
     finally:
         garmin.settings.GARMIN_API_KEY, garmin.settings.GARMIN_API_KEY_USER_ID, garmin.Garmin, garmin.parse_fit = saved
 
@@ -247,5 +283,6 @@ if __name__ == "__main__":
     test_unclear_matches_are_suggested_and_other_users_never_match()
     test_class_without_start_time_links_by_duration()
     test_sync_imports_runs_and_health_with_the_owners_key_only()
+    test_slow_down_keeps_what_came_in_and_the_next_sync_carries_on()
     test_api_status_never_returns_the_key_and_app_logging_links()
     print("ok")
