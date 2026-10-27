@@ -87,6 +87,54 @@ def _parse_time(t) -> time_cls:
     return time_cls(h, m, s)
 
 
+# Everything type-specific about a workout lives in workout_logs.details (JSON),
+# next to the name and the sets. These shared fields are stored there too.
+WORKOUT_DETAIL_ARGS = {
+    "start_time": {"type": "string", "description": "HH:MM the session started"},
+    "elapsed_minutes": {"description": "numeric, total clock time including stops"},
+    "rpe_session": {"description": "numeric 1-10, how hard the whole session felt"},
+    "avg_hr": {"description": "numeric bpm"},
+    "max_hr": {"description": "numeric bpm"},
+    "hr_zone_seconds": {
+        "type": "object",
+        "description": 'Seconds in each heart-rate zone, e.g. {"z3": 236, "z4": 1027, "z5": 4, "zone_model": "max HR 190"}',
+    },
+    "source": {"description": "Where the data came from: strava, garmin, manual, apple_health. A list when several devices recorded it."},
+    "recording_note": {"type": "string", "description": "e.g. 'Garmin started late, covers only the second half'"},
+    "details": {
+        "type": "object",
+        "description": (
+            "Everything specific to the workout type. Every key is optional: send what you know, "
+            "fill in the rest later with update_workout. Unknown keys are kept. Units: km, m, kg, bpm, W. "
+            "Any key ending in _s is seconds; a string like '8:36' or '1:23:52' is converted for you. "
+            "General: subtype (road, trail, treadmill, intervals, class, race, full_simulation, "
+            "half_simulation, station_practice, steady…), location, class_name, instructor. "
+            "Running, walking, cycling, swimming: distance_km, moving_time_s, elapsed_time_s, total_time_s, "
+            "avg_pace_s_per_km, best_split_s_per_km, elevation_gain_m, elevation_loss_m, min_elevation_m, "
+            "max_elevation_m, avg_cadence_spm, max_cadence_spm, avg_speed_kmh, avg_rpm, max_rpm, avg_power_w, "
+            "max_power_w, normalized_power_w, ftp_w, intensity_factor, tss, resistance, shoes, weather, "
+            "splits: [{km, time_s, pace_s_per_km, elev_delta_m, avg_hr}]. "
+            "Hyrox, CrossFit, TRX, BodyPump, HIIT and classes: parts = the blocks of the session in order "
+            "(warm-up, mobility/stretching, skill, strength, WOD, stations, finisher, cool-down): "
+            "[{name, kind (warm_up, mobility, skill, strength, wod, metcon, station, run, accessory, cool_down, other), "
+            "format (for_time, amrap, emom, intervals, rounds, sets, tabata, chipper, circuit), time_cap_s, rounds, "
+            "work_s, rest_s, time_s, rx_level (rx, rx_plus, scaled), "
+            "score: {type (time, rounds_reps, reps, load, distance, calories, none), time_s, rounds, reps, load_kg, "
+            "distance_m, calories, text}, round_times_s: [seconds per round], notes, "
+            "items: [{name, reps, sets, time_s, distance_m, weight_kg, calories, height_cm, body_angle, tempo, side, "
+            "rpe, scaling, completed, notes}]}]. "
+            "Hyrox also: division (open_men, open_women, pro_men, pro_women, doubles, relay), total_time_s, "
+            "roxzone_s, partial (true when only some stations were done); put the runs and stations as items of "
+            "one part, in race order, each with distance_m or reps, weight_kg and time_s. "
+            "BodyPump also: release_number; one part 'Tracks' with an item per track {name, muscle_group, weight_kg}."
+        ),
+    },
+}
+# Keys of WORKOUT_DETAIL_ARGS (and name/exercises) that update_workout and
+# log_workout fold into details.
+WORKOUT_DETAIL_KEYS = ("name", "exercises", *WORKOUT_DETAIL_ARGS.keys() - {"details"})
+
+
 server = Server("loadout")
 
 
@@ -463,14 +511,17 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="log_workout",
             description=(
-                "Log a completed workout session with a full exercise breakdown. "
-                "workout_type: crossfit, running, football, yoga, cycling, stretch, "
-                "swimming, hiit, walking, boxing, pilates, climbing, trx, strength, other. "
+                "Log a completed workout session. "
+                "workout_type: running, strength, hyrox, crossfit, bodypump, cycling, trx, hiit, yoga, "
+                "walking, swimming, stretch, football, boxing, pilates, climbing, other "
+                "(variants such as trail run or indoor class go in details.subtype). "
                 "intensity: light, moderate, intense. "
                 "name: optional short title for the session (e.g. 'Push Day'). "
-                "exercises: list of exercises, each with `name` and a `sets` array where "
-                "every set carries reps, weight_kg, optional rpe (1-10), unit and notes — "
-                "this drives the per-set breakdown shown in workout history. "
+                "exercises: gym lifts as a list of exercises, each with `name` and a `sets` array where "
+                "every set carries reps, weight_kg, optional rpe (1-10), unit and notes. "
+                "details: everything else about the session, shaped by the workout type (distance, pace, "
+                "splits, power, Hyrox stations, CrossFit parts with scores, BodyPump tracks…). "
+                "Only workout_type is needed; duration_minutes can come from details.moving_time_s or total_time_s. "
                 "energy_level: 1-10 scale."
             ),
             inputSchema={
@@ -478,6 +529,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "workout_type": {"type": "string"},
                     "name": {"type": "string", "description": "Optional session title, e.g. 'Push Day'"},
+                    **WORKOUT_DETAIL_ARGS,
                     "duration_minutes": {"description": "numeric"},
                     "intensity": {"type": "string", "enum": ["light", "moderate", "intense"]},
                     "description": {"type": "string"},
@@ -494,26 +546,39 @@ async def list_tools() -> list[Tool]:
                     "energy_level": { "minimum": 1, "maximum": 10},
                     "date": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
                 },
-                "required": ["workout_type", "duration_minutes", "intensity"],
+                "required": ["workout_type"],
             },
         ),
         Tool(
             name="get_workouts",
-            description="Get workout history for the last N days (default 30).",
+            description=(
+                "Get workout history for the last N days (default 30), newest first, with each workout's "
+                "details (distance, splits, parts, scores…). Filter by workout_type or fetch one workout_id."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "days": { "default": 30},
+                    "workout_type": {"type": "string"},
+                    "workout_id": {"description": "numeric"},
                 },
                 "required": [],
             },
         ),
         Tool(
             name="get_workout_stats",
-            description="Get workout stats for this week and this month: count, total minutes, calories, types.",
+            description=(
+                "Workout stats: this week and this month (count, minutes, calories, types), plus by_type for the "
+                "last N weeks (default 8): sessions and minutes per week (with distance_km), bests (longest "
+                "distance, fastest pace and split, fastest total time, highest power), the recent sessions with "
+                "their key numbers and part scores, and per exercise/station/track: times done, last values and "
+                "heaviest weight. Use it to compare the same workout type across weeks."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "workout_type": {"type": "string", "description": "Only this type in by_type"},
+                    "weeks": {"description": "numeric, default 8"},
                 },
                 "required": [],
             },
@@ -852,13 +917,17 @@ async def list_tools() -> list[Tool]:
             name="update_workout",
             description=(
                 "Change a logged workout by its ID (from get_workouts). Send only what changes. "
-                "exercises replaces the whole exercise list, in the same shape as log_workout."
+                "exercises replaces the whole exercise list, in the same shape as log_workout. "
+                "details is merged key by key into what is stored: a key you send replaces that key "
+                "(send the whole parts or splits list when changing it), a key sent as null is removed, "
+                "and keys you leave out stay. The shared fields (avg_hr, source…) work the same way."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "workout_id": {"description": "numeric"},
                     "name": {"type": "string"},
+                    **WORKOUT_DETAIL_ARGS,
                     "date": {"type": "string", "description": "YYYY-MM-DD"},
                     "workout_type": {"type": "string"},
                     "duration_minutes": {"description": "numeric, 1 or more"},
@@ -1147,6 +1216,85 @@ def _normalize_workout_exercises(raw) -> list:
 
         out.append({"name": name, "sets": norm_sets, "notes": ex.get("notes")})
     return out
+
+
+def _json_obj(val) -> dict:
+    """I read a JSON column that may come back as text."""
+    if isinstance(val, str):
+        try:
+            val = json.loads(val)
+        except ValueError:
+            return {}
+    return dict(val) if isinstance(val, dict) else {}
+
+
+def _seconds(val, where: str):
+    """I turn '8:36' or '1:23:52' into seconds; numbers pass through."""
+    if val is None or isinstance(val, (int, float)):
+        return val
+    try:
+        parts = [float(p) for p in str(val).strip().split(":")]
+    except ValueError:
+        parts = []
+    if not 1 <= len(parts) <= 3:
+        raise ValueError(f"{where} should be seconds or a time like 8:36 or 1:23:52, not {val!r}.")
+    total = 0.0
+    for p in parts:
+        total = total * 60 + p
+    return int(total) if total.is_integer() else round(total, 1)
+
+
+def _clean_details(value, where: str = "details"):
+    """I check the shape of a workout's details and turn times given as text
+    (any key ending in _s or _s_per_km, and heart-rate zones) into seconds."""
+    if isinstance(value, list):
+        return [_clean_details(v, f"{where}[{i}]") for i, v in enumerate(value)]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for k, v in value.items():
+        at = f"{where}.{k}"
+        if k in ("parts", "items", "splits") and v is not None and (
+                not isinstance(v, list) or not all(isinstance(x, dict) for x in v)):
+            raise ValueError(f"{at} must be a list of objects.")
+        if k.endswith("_s") or k.endswith("_s_per_km"):
+            v = [_seconds(x, at) for x in v] if isinstance(v, list) else _seconds(v, at)
+        elif k == "hr_zone_seconds" and isinstance(v, dict):
+            v = {z: _seconds(s, f"{at}.{z}") if z[:1] == "z" and z[1:].isdigit() else s for z, s in v.items()}
+        out[k] = _clean_details(v, at)
+    return out
+
+
+def _apply_workout_details(details: dict, args: dict) -> dict:
+    """I fold the details object, the shared fields (heart rate, source…), the
+    name and the sets sent to log_workout / update_workout into the stored
+    details. A key sent as null is removed; keys not sent stay."""
+    raw = args.get("details") or {}
+    if isinstance(raw, str):
+        with contextlib.suppress(ValueError):
+            raw = json.loads(raw)
+    if not isinstance(raw, dict):
+        raise ValueError("details must be an object.")
+    changes = {**raw, **{k: args[k] for k in WORKOUT_DETAIL_KEYS if k in args}}
+    if changes.get("exercises") is not None:
+        changes["exercises"] = _normalize_workout_exercises(changes["exercises"])
+        changes["total_volume_kg"] = round(sum(
+            (s.get("weight_kg") or 0) * (s.get("reps") or 0)
+            for ex in changes["exercises"] for s in ex["sets"]
+        ))
+    if isinstance(changes.get("source"), str):
+        changes["source"] = [changes["source"]]
+    if changes.get("start_time") is not None:
+        try:
+            changes["start_time"] = _parse_time(changes["start_time"]).strftime("%H:%M")
+        except (ValueError, IndexError):
+            raise ValueError("start_time should look like 10:36.")
+    for k, v in _clean_details(changes).items():
+        if v is None:
+            details.pop(k, None)
+        else:
+            details[k] = v
+    return details
 
 
 # ---- Tool implementations ----
@@ -1556,17 +1704,13 @@ async def _get_macro_summary(conn: asyncpg.Connection, user_id: int, args: dict)
 
 async def _log_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     log_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
-    details = {}
-    if args.get("name"):
-        details["name"] = args["name"]
-    if args.get("exercises"):
-        normalized = _normalize_workout_exercises(args["exercises"])
-        if normalized:
-            details["exercises"] = normalized
-            details["total_volume_kg"] = round(sum(
-                (s.get("weight_kg") or 0) * (s.get("reps") or 0)
-                for ex in normalized for s in ex["sets"]
-            ))
+    details = _apply_workout_details({}, args)
+    minutes = _i(args.get("duration_minutes"))
+    if not minutes:
+        secs = details.get("moving_time_s") or details.get("total_time_s") or details.get("elapsed_time_s")
+        minutes = round(secs / 60) if isinstance(secs, (int, float)) else None
+    if not minutes or minutes < 1:
+        raise ValueError("duration_minutes is needed (or moving_time_s / total_time_s in details).")
 
     row = await conn.fetchrow(
         """
@@ -1579,10 +1723,10 @@ async def _log_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> di
         user_id,
         log_date,
         args["workout_type"].lower(),
-        _i(args["duration_minutes"]),
-        args["intensity"],
+        minutes,
+        args.get("intensity"),
         args.get("description"),
-        json.dumps(details) if details else json.dumps({}),
+        json.dumps(details),
         _i(args.get("calories_burned_est")),
         _i(args.get("energy_level")),
     )
@@ -1591,32 +1735,41 @@ async def _log_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> di
 
 async def _get_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
     from datetime import timedelta
-    days = _i(args.get("days", 30))
-    start = date_cls.today() - timedelta(days=days)
+    where, params = ["user_id = $1"], [user_id]
+    if args.get("workout_id") is not None:
+        params.append(_i(args["workout_id"]))
+        where.append(f"id = ${len(params)}")
+    else:
+        params.append(date_cls.today() - timedelta(days=_i(args.get("days"), 30)))
+        where.append(f"date >= ${len(params)}")
+    if args.get("workout_type"):
+        params.append(args["workout_type"].lower())
+        where.append(f"workout_type = ${len(params)}")
     rows = await conn.fetch(
-        """
+        f"""
         SELECT id, date, workout_type, duration_minutes, intensity,
                calories_burned_est, notes, energy_level, details
         FROM workout_logs
-        WHERE user_id = $1 AND date >= $2
-        ORDER BY date DESC
+        WHERE {" AND ".join(where)}
+        ORDER BY date DESC, id DESC
         """,
-        user_id, start,
+        *params,
     )
     workouts = []
     for r in rows:
         w = _serialize(r)
-        details = w.get("details")
-        if isinstance(details, str):
-            try:
-                details = json.loads(details)
-            except (ValueError, TypeError):
-                details = None
-        if isinstance(details, dict):
-            w["name"] = details.get("name")
-            w["exercises"] = details.get("exercises", [])
+        w["details"] = _json_obj(w.get("details"))
+        w["name"] = w["details"].get("name")
+        w["exercises"] = w["details"].get("exercises", [])
         workouts.append(w)
     return {"workouts": workouts, "total": len(workouts)}
+
+
+# Per-type bests in get_workout_stats, and the numbers shown for each recent session
+BEST_LOWER = ("avg_pace_s_per_km", "best_split_s_per_km", "total_time_s")
+BEST_HIGHER = ("distance_km", "avg_power_w", "normalized_power_w")
+SESSION_KEYS = ("subtype", "distance_km", "avg_pace_s_per_km", "best_split_s_per_km", "elevation_gain_m",
+                "total_time_s", "avg_power_w", "avg_hr", "rpe_session")
 
 
 async def _get_workout_stats(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
@@ -1624,15 +1777,68 @@ async def _get_workout_stats(conn: asyncpg.Connection, user_id: int, args: dict)
     today = date_cls.today()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
+    weeks = max(1, _i(args.get("weeks"), 8))
+    window = week_start - timedelta(weeks=weeks - 1)
+    only = (args.get("workout_type") or "").lower()
 
-    week_rows = await conn.fetch(
-        "SELECT duration_minutes, calories_burned_est, workout_type FROM workout_logs WHERE user_id=$1 AND date>=$2",
-        user_id, week_start,
+    rows = await conn.fetch(
+        """
+        SELECT id, date, workout_type, duration_minutes, calories_burned_est, details
+        FROM workout_logs WHERE user_id = $1 AND date >= $2 ORDER BY date, id
+        """,
+        user_id, min(window, month_start),
     )
-    month_rows = await conn.fetch(
-        "SELECT duration_minutes, calories_burned_est FROM workout_logs WHERE user_id=$1 AND date>=$2",
-        user_id, month_start,
-    )
+    week_rows = [r for r in rows if r["date"] >= week_start]
+    month_rows = [r for r in rows if r["date"] >= month_start]
+
+    by_type = {}
+    for r in rows:
+        if r["date"] < window or (only and r["workout_type"] != only):
+            continue
+        d = _json_obj(r["details"])
+        t = by_type.setdefault(r["workout_type"], {"sessions": 0, "minutes": 0, "weeks": {}, "best": {}, "recent": [], "items": {}})
+        t["sessions"] += 1
+        t["minutes"] += r["duration_minutes"]
+        wk = t["weeks"].setdefault(str(r["date"] - timedelta(days=r["date"].weekday())), {"sessions": 0, "minutes": 0})
+        wk["sessions"] += 1
+        wk["minutes"] += r["duration_minutes"]
+        km = _f(d.get("distance_km"))
+        if km:
+            wk["distance_km"] = round(wk.get("distance_km", 0) + km, 2)
+        for key in BEST_LOWER + BEST_HIGHER:
+            v, best = _f(d.get(key)), t["best"].get(key)
+            if v and (best is None or (v < best["value"] if key in BEST_LOWER else v > best["value"])):
+                t["best"][key] = {"value": v, "date": str(r["date"]), "workout_id": r["id"]}
+
+        parts = [p for p in d.get("parts") or [] if isinstance(p, dict)]
+        session = {"id": r["id"], "date": str(r["date"]), "name": d.get("name"), "minutes": r["duration_minutes"],
+                   **{k: d[k] for k in SESSION_KEYS if d.get(k) is not None}}
+        scores = [{"part": p.get("name"), **p["score"]} for p in parts if isinstance(p.get("score"), dict)]
+        if scores:
+            session["scores"] = scores
+        t["recent"].append(session)
+
+        # Every exercise, station or track done in this session: last values and heaviest weight
+        done = [it for p in parts for it in p.get("items") or [] if isinstance(it, dict)]
+        done += [{"name": ex.get("name"), **s} for ex in d.get("exercises") or [] if isinstance(ex, dict)
+                 for s in ex.get("sets") or [] if isinstance(s, dict)]
+        seen = {}
+        for it in done:
+            if not it.get("name"):
+                continue
+            s = seen.setdefault(it["name"], {"heaviest": 0})
+            s["last"] = {k: it[k] for k in ("reps", "time_s", "distance_m", "weight_kg", "calories") if it.get(k) is not None}
+            s["heaviest"] = max(s["heaviest"], _f(it.get("weight_kg"), 0))
+        for name, s in seen.items():
+            item = t["items"].setdefault(name, {"times": 0})
+            item["times"] += 1
+            item["last"] = {"date": str(r["date"]), **s["last"]}
+            if s["heaviest"] > item.get("heaviest_kg", 0):
+                item["heaviest_kg"] = s["heaviest"]
+
+    for t in by_type.values():
+        t["weeks"] = [{"week_of": k, **v} for k, v in t["weeks"].items()]
+        t["recent"] = t["recent"][::-1][:10]
     return {
         "this_week": {
             "count": len(week_rows),
@@ -1645,6 +1851,8 @@ async def _get_workout_stats(conn: asyncpg.Connection, user_id: int, args: dict)
             "total_minutes": sum(r["duration_minutes"] for r in month_rows),
             "total_calories": sum(r["calories_burned_est"] or 0 for r in month_rows),
         },
+        "weeks": weeks,
+        "by_type": by_type,
     }
 
 
@@ -2246,22 +2454,11 @@ async def _update_workout(conn: asyncpg.Connection, user_id: int, args: dict) ->
     for col in ("calories_burned_est", "energy_level"):
         if args.get(col) is not None:
             values[col] = _i(args[col])
-    # The name and the sets live in details, next to anything else stored there.
+    # The name, the sets and everything type-specific live in details.
     # ponytail: the phone keeps a local copy of live sessions matched by date and
     # name; a date moved here can show that copy again on the recording phone.
-    if args.get("name") is not None or args.get("exercises") is not None:
-        details = current["details"]
-        details = json.loads(details) if isinstance(details, str) else dict(details or {})
-        if args.get("name") is not None:
-            details["name"] = args["name"]
-        if args.get("exercises") is not None:
-            normalized = _normalize_workout_exercises(args["exercises"])
-            details["exercises"] = normalized
-            details["total_volume_kg"] = round(sum(
-                (s.get("weight_kg") or 0) * (s.get("reps") or 0)
-                for ex in normalized for s in ex["sets"]
-            ))
-        values["details"] = json.dumps(details)
+    if any(k in args for k in ("details", *WORKOUT_DETAIL_KEYS)):
+        values["details"] = json.dumps(_apply_workout_details(_json_obj(current["details"]), args))
     return await _update_owned(conn, "workout_logs", workout_id, user_id, values, jsonb=("details",))
 
 

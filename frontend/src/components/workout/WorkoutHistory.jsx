@@ -5,8 +5,7 @@ import { IllustratedEmptyState, SkeletonCard } from "../../design/components";
 import { workoutAPI } from "../../utils/api";
 import { replaceLocalCopy } from "../../utils/workouts";
 import { showToast } from "../../utils/toast";
-
-const FILTERS = ["all", "strength", "cardio", "hyrox", "running", "yoga"];
+import WorkoutDetails, { workoutStyle, summaryTiles, hasDetails } from "./WorkoutDetails";
 
 // "2026-10-05" -> "Mon 5 Oct" (local date, same style as Budget)
 function fmtDay(raw) {
@@ -89,15 +88,11 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
   }
 
   const type        = workout.workout_type || "strength";
-  const borderColor = type === "hyrox" ? T.violet : type === "cardio" || type === "running" ? T.amber : T.teal;
-  const iconName    = type === "strength" ? "dumbbell" : type === "hyrox" ? "bolt" : "run";
-
+  const { color: borderColor, icon: iconName } = workoutStyle(type);
+  const d           = workout.details || {};
   const exercises   = workout.exercises || [];
-  const totalSets   = exercises.reduce((s, e) => s + (e.sets?.length || 0), 0);
-  const totalVolume = exercises.reduce(
-    (s, e) => s + (e.sets || []).reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0),
-    0
-  );
+  const ownNotes    = workout.notes && !workout.notes.startsWith(`${workout.name} — `) ? workout.notes : null;
+  const noteText    = workout.ai_analysis?.notes || workout.description || d.notes || ownNotes;
 
   return (
     <div
@@ -117,8 +112,8 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, textTransform: "capitalize" }}>{workout.name || type}</div>
-            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>
-              {fmtDay(workout.date || workout.loggedAt)}
+            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2, textTransform: "capitalize" }}>
+              {[fmtDay(workout.date || workout.loggedAt), d.start_time, d.subtype && String(d.subtype).replace(/_/g, " "), d.location].filter(Boolean).join(" · ")}
             </div>
           </div>
           <button aria-label="Close" title="Close" onClick={onClose} style={{ background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 9999, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
@@ -183,11 +178,7 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
         <>
         {/* Stats row */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          {[
-            ["Duration", `${workout.duration_minutes || 0}m`],
-            ["Sets",     String(totalSets)],
-            ["Volume",   totalVolume > 0 ? `${Math.round(totalVolume).toLocaleString()}kg` : "—"],
-          ].map(([label, value]) => (
+          {summaryTiles(workout).map(([label, value]) => (
             <div key={label} style={{ background: T.elevated, borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
               <div style={{ fontSize: 9, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600, marginBottom: 6 }}>{label}</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: borderColor, fontFamily: T.fontMono }}>{value}</div>
@@ -195,11 +186,14 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
           ))}
         </div>
 
-        {/* Notes / AI analysis if present */}
-        {(workout.ai_analysis?.notes || workout.description) && (
+        <WorkoutDetails workout={workout} color={borderColor} />
+
+        {/* Notes / AI analysis if present. Live sessions lead their notes with an
+            auto summary ("Push Day — 3 exercises…"), which the tiles already show. */}
+        {noteText && (
           <div style={{ background: T.elevated, border: `1px solid ${T.teal}33`, borderRadius: 12, padding: "12px 14px" }}>
             <div style={{ fontSize: 10, color: T.teal, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Notes</div>
-            <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>{workout.ai_analysis?.notes || workout.description}</div>
+            <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{noteText}</div>
           </div>
         )}
 
@@ -268,7 +262,7 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
               );
             })}
           </div>
-        ) : (
+        ) : !hasDetails(d) && !noteText && (
           <div style={{ textAlign: "center", padding: "24px 0", color: T.textDim, fontSize: 13 }}>
             No exercise data recorded for this session.
           </div>
@@ -294,6 +288,7 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
   const [filter,          setFilter]   = useState("all");
   const [search,          setSearch]   = useState("");
   const [selectedWorkout, setSelected] = useState(null);
+  const filters = useMemo(() => ["all", ...new Set(history.map((w) => w.workout_type || "strength"))], [history]);
 
   const filtered = useMemo(() => {
     let data = [...history];
@@ -346,7 +341,7 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
             />
           </div>
           <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
-            {FILTERS.map((f) => (
+            {filters.map((f) => (
               <button key={f} onClick={() => setFilter(f)}
                 style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 9999, background: filter === f ? T.teal : T.elevated, color: filter === f ? "#0A0A0F" : T.text, border: `1px solid ${filter === f ? T.teal : T.border}`, fontSize: 11, fontWeight: filter === f ? 700 : 500, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
                 {f}
@@ -358,8 +353,9 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
         {/* History list */}
         {filtered.map((w) => {
           const type        = w.workout_type || "strength";
-          const borderColor = type === "hyrox" ? T.violet : type === "strength" ? T.teal : T.amber;
-          const iconName    = type === "strength" ? "dumbbell" : type === "hyrox" ? "bolt" : "run";
+          const { color: borderColor, icon: iconName } = workoutStyle(type);
+          const km          = w.details?.distance_km;
+          const tags        = (w.exercises || []).length ? w.exercises : Array.isArray(w.details?.parts) ? w.details.parts.filter((p) => p?.name) : [];
           const totalSets   = (w.exercises || []).reduce((s, e) => s + (e.sets?.length || 0), 0);
           const totalVolume = (w.exercises || []).reduce(
             (s, e) => s + (e.sets || []).reduce((ss, set) => ss + (set.weight_kg || 0) * (set.reps || 0), 0),
@@ -385,6 +381,7 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
                 </div>
                 <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginBottom: 6 }}>
                   {fmtDay(w.date || w.loggedAt)} · {w.duration_minutes || 0}m
+                  {km != null && ` · ${km} km`}
                   {hasExerciseData && ` · ${sets(totalSets)}`}
                 </div>
                 {totalVolume > 0 && (
@@ -393,13 +390,13 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
                   </div>
                 )}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {(w.exercises || []).slice(0, 4).map((e) => (
-                    <span key={e.name} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 5, padding: "2px 7px" }}>
+                  {tags.slice(0, 4).map((e, i) => (
+                    <span key={i} style={{ fontSize: 10, color: T.textMuted, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 5, padding: "2px 7px" }}>
                       {e.name}
                     </span>
                   ))}
-                  {(w.exercises || []).length > 4 && (
-                    <span style={{ fontSize: 10, color: T.textDim }}>+{(w.exercises || []).length - 4} more</span>
+                  {tags.length > 4 && (
+                    <span style={{ fontSize: 10, color: T.textDim }}>+{tags.length - 4} more</span>
                   )}
                 </div>
               </div>
