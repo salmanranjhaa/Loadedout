@@ -1,3 +1,4 @@
+import re
 from datetime import date as date_cls, time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,51 @@ def _require_end_after_start(start: Optional[time], end: Optional[time]) -> None
 class GoogleCalendarSyncRequest(BaseModel):
     days_back: int = 1
     days_ahead: int = 30
+
+
+# Words too common to say two events are the same thing
+_COMMON_WORDS = {"the", "and", "with", "for", "from", "session", "event"}
+
+
+def _title_words(title: Optional[str]) -> set[str]:
+    # Bracketed tags like "(HSG)" are shared by unrelated events, so skip them
+    text = re.sub(r"\([^)]*\)", " ", (title or "").lower())
+    return {w for w in re.findall(r"[a-z0-9]+", text) if len(w) >= 3 and w not in _COMMON_WORDS}
+
+
+def _span(e: ScheduleEvent) -> tuple[int, int]:
+    start = e.start_time.hour * 60 + e.start_time.minute
+    end = e.end_time.hour * 60 + e.end_time.minute if e.end_time else start + 30
+    return start, max(end, start + 1)
+
+
+def _is_google(e: ScheduleEvent) -> bool:
+    return (e.event_data or {}).get("source") == "google_calendar"
+
+
+def _same_activity(google: ScheduleEvent, own: ScheduleEvent) -> bool:
+    """Overlap for at least half of the shorter event and share a title word.
+    Two different things at the same time (a call during the gym) stay apart."""
+    (gs, ge), (os_, oe) = _span(google), _span(own)
+    overlap = min(ge, oe) - max(gs, os_)
+    if overlap <= 0 or overlap * 2 < min(ge - gs, oe - os_):
+        return False
+    return bool(_title_words(google.title) & _title_words(own.title))
+
+
+def _google_duplicates(events) -> tuple[set[int], set[int]]:
+    """Google events that repeat one of the user's own events that day.
+    Returns (Google event ids to hide, own event ids to mark)."""
+    own = [e for e in events if not _is_google(e)]
+    hidden, marked = set(), set()
+    for g in events:
+        if not _is_google(g) or (g.event_data or {}).get("all_day"):
+            continue
+        match = next((o for o in own if _same_activity(g, o)), None)
+        if match:
+            hidden.add(g.id)
+            marked.add(match.id)
+    return hidden, marked
 
 
 @router.get("/")
@@ -96,11 +142,21 @@ async def get_schedule(
         )
 
     query = query.order_by(ScheduleEvent.day_of_week, ScheduleEvent.start_time)
-    
+
     result = await db.execute(query)
     events = result.scalars().all()
-    
-    return {"events": [_format_event(e) for e in events]}
+
+    # On a real day, Google copies of the user's own events show once
+    hidden, also_in_google = _google_duplicates(events) if parsed_date else (set(), set())
+    out = []
+    for e in events:
+        if e.id in hidden:
+            continue
+        item = _format_event(e)
+        if e.id in also_in_google:
+            item["also_in_google"] = True
+        out.append(item)
+    return {"events": out}
 
 
 @router.get("/google/status")

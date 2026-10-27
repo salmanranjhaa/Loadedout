@@ -1,16 +1,21 @@
+import asyncio
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import async_session
 from app.models.google_oauth import GoogleOAuthToken
 from app.models.schedule import EventType, RecurrenceType, ScheduleEvent
 from app.services.google_oauth import refresh_google_access_token
 
+logger = logging.getLogger(__name__)
 
 GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 CALENDAR_FULL_SCOPE = "https://www.googleapis.com/auth/calendar"
+AUTO_SYNC_EVERY = timedelta(hours=3)
 
 
 def _parse_google_datetime(raw: str) -> datetime:
@@ -107,9 +112,12 @@ def _event_time_fields(event: dict) -> tuple[int, datetime, time, time]:
     if end_dt <= start_dt:
         end_dt = start_dt + timedelta(minutes=30)
 
+    # The schedule matches days by the UTC date of specific_date, so store the
+    # event's own calendar date at UTC midnight (as all-day events do). The
+    # real instant put 00:30 Zurich time on the previous day.
     return (
         start_dt.weekday(),
-        start_dt,
+        datetime.combine(start_dt.date(), time(0, 0), tzinfo=timezone.utc),
         start_dt.time().replace(second=0, microsecond=0, tzinfo=None),
         end_dt.time().replace(second=0, microsecond=0, tzinfo=None),
     )
@@ -231,6 +239,7 @@ async def sync_google_calendar(
             "calendar_id": "primary",
             "status": status,
             "html_link": event.get("htmlLink"),
+            "all_day": bool((event.get("start") or {}).get("date")),
         }
 
         if existing:
@@ -266,8 +275,13 @@ async def sync_google_calendar(
             )
             created += 1
 
+    # Only events inside the fetched window can be "gone from Google"; older
+    # ones were simply not asked for, and used to vanish a day after each sync.
+    # The window's first and last days are only partly covered, so skip them.
     for google_event_id, existing in existing_google.items():
-        if google_event_id not in remote_ids and existing.is_active:
+        day = existing.specific_date.date() if existing.specific_date else None
+        in_window = day is not None and time_min.date() < day < time_max.date()
+        if in_window and google_event_id not in remote_ids and existing.is_active:
             existing.is_active = False
             deactivated += 1
 
@@ -284,3 +298,31 @@ async def sync_google_calendar(
             "to": time_max.isoformat(),
         },
     }
+
+
+def _sync_due(token_row: GoogleOAuthToken) -> bool:
+    last = token_row.last_sync_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return _has_calendar_scope(token_row.scopes) and (
+        last is None or datetime.now(timezone.utc) - last >= AUTO_SYNC_EVERY
+    )
+
+
+async def scheduler():
+    """Every 30 minutes, sync each connected calendar not synced for 3 hours,
+    so the schedule (and the AI coach reading it) stays current without a tap."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            async with async_session() as db:
+                due = [t.user_id for t in (await db.execute(select(GoogleOAuthToken))).scalars().all() if _sync_due(t)]
+            for user_id in due:
+                try:
+                    async with async_session() as db:
+                        await sync_google_calendar(db, user_id=user_id)
+                except Exception as e:
+                    logger.warning("Google Calendar sync for user %s failed: %s", user_id, e)
+        except Exception:
+            logger.exception("Google Calendar scheduler")
+        await asyncio.sleep(1800)

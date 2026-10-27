@@ -4,9 +4,43 @@ import { Icon } from "../design/icons";
 import {
   PageScroll, SettingsRow, SettingsGroup,
 } from "../design/components";
-import { userAPI } from "../utils/api";
+import { connectGoogleAccount, userAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
 import GarminSettings from "../components/health/GarminSettings";
+
+// ── Google: link this account to Google sign-in and Calendar ──────────────────
+function GoogleConnector({ connected, onConnected }) {
+  const [busy, setBusy] = useState(false);
+
+  async function connect() {
+    setBusy(true);
+    try {
+      await connectGoogleAccount();
+      showToast("Google connected", "success");
+      onConnected?.();
+    } catch (e) {
+      showToast(e?.message || "Couldn't connect Google", "error");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
+      <div style={{ width: 28, height: 28, borderRadius: 8, background: T.elevated2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name="google" size={14} color={T.textMuted} />
+      </div>
+      <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Google</span>
+      {connected ? (
+        <span style={{ fontSize: 11, color: T.teal, fontWeight: 600 }}>Connected</span>
+      ) : (
+        <button onClick={connect} disabled={busy}
+          style={{ padding: "6px 14px", background: busy ? T.elevated2 : T.teal, color: busy ? T.textMuted : "#0A0A0F", border: "none", borderRadius: 9999, fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+          {busy ? "Connecting…" : "Connect"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ── Claude connector: personal links to the Loaded Out MCP server ─────────────
 const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -506,18 +540,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
 
         {/* Connected services */}
         <SettingsGroup title="Connected services">
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `0.5px solid ${T.border}` }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: 8, background: T.elevated2,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <Icon name="google" size={14} color={T.textMuted} />
-            </div>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Google</span>
-            <span style={{ fontSize: 11, color: p.google_connected ? T.teal : T.textDim, fontWeight: 600 }}>
-              {p.google_connected ? "Connected" : "Not connected"}
-            </span>
-          </div>
+          <GoogleConnector connected={!!p.google_connected} onConnected={onProfileUpdate} />
           <div style={{ borderBottom: `0.5px solid ${T.border}` }}><GarminSettings /></div>
           <ClaudeConnector />
         </SettingsGroup>

@@ -24,6 +24,7 @@ from app.api.routes_exercises import router as exercises_router
 from app.api.routes_food import router as food_router
 from app.api.routes_garmin import router as garmin_router
 from app.services.garmin import scheduler as garmin_scheduler
+from app.services.google_calendar import scheduler as google_calendar_scheduler
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -44,8 +45,10 @@ async def lifespan(_app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} — model: {settings.VERTEX_AI_MODEL}")
     # ponytail: runs in this process; fine with one uvicorn worker, give it a lock before adding workers
     garmin_schedule = asyncio.create_task(garmin_scheduler())
+    calendar_schedule = asyncio.create_task(google_calendar_scheduler())
     yield
     garmin_schedule.cancel()
+    calendar_schedule.cancel()
 
 
 app = FastAPI(
