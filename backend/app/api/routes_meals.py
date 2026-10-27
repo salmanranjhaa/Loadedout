@@ -179,6 +179,8 @@ class MealLogUpdate(BaseModel):
     carbs_g: Optional[NonNeg] = None
     fat_g: Optional[NonNeg] = None
     date: Optional[str] = None  # move the meal to another day (YYYY-MM-DD)
+    # [{name, amount_g, calories, protein}]; replaces the list, [] clears it
+    custom_ingredients: Optional[list[dict]] = None
 
 
 @router.put("/log/{log_id}")
@@ -205,6 +207,7 @@ async def update_meal_log(
     if "carbs_g" in fields_set: log.carbs_g = body.carbs_g
     if "fat_g" in fields_set: log.fat_g = body.fat_g
     if body.date: log.date = _parse_client_date(body.date)
+    if "custom_ingredients" in fields_set: log.custom_ingredients = body.custom_ingredients or None
     await db.commit()
     await db.refresh(log)
     return _format_log(log)
@@ -426,4 +429,6 @@ def _format_log(m: MealLog) -> dict:
         "carbs_g": m.carbs_g,
         "fat_g": m.fat_g,
         "notes": m.notes,
+        "custom_ingredients": m.custom_ingredients or [],
+        "template_id": m.template_id,
     }

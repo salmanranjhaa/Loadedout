@@ -42,8 +42,8 @@ def _require_end_after_start(start: Optional[time], end: Optional[time]) -> None
 
 
 class GoogleCalendarSyncRequest(BaseModel):
-    days_back: int = 1
-    days_ahead: int = 30
+    days_back: int = 7
+    days_ahead: int = 60
 
 
 # Words too common to say two events are the same thing

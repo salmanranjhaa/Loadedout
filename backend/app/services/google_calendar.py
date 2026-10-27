@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import date, datetime, time, timedelta, timezone
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import select
@@ -12,7 +13,8 @@ from app.services.google_oauth import refresh_google_access_token
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+GOOGLE_CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
+GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{}/events"
 CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 CALENDAR_FULL_SCOPE = "https://www.googleapis.com/auth/calendar"
 AUTO_SYNC_EVERY = timedelta(hours=3)
@@ -123,13 +125,36 @@ def _event_time_fields(event: dict) -> tuple[int, datetime, time, time]:
     )
 
 
+async def _fetch_calendars(access_token: str) -> list[dict]:
+    """The calendars the user has switched on in Google Calendar (their own,
+    shared and subscribed ones, like a sports or holiday calendar)."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    calendars: list[dict] = []
+    page_token = None
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        while True:
+            params = {"pageToken": page_token} if page_token else {}
+            resp = await client.get(GOOGLE_CALENDAR_LIST_URL, headers=headers, params=params)
+            if resp.status_code >= 400:
+                text = resp.text[:300].replace("\n", " ")
+                raise RuntimeError(f"Google Calendar list fetch failed ({resp.status_code}): {text}")
+            payload = resp.json()
+            calendars.extend(payload.get("items", []))
+            page_token = payload.get("nextPageToken")
+            if not page_token:
+                break
+    return [c for c in calendars if c.get("primary") or (c.get("selected") and not c.get("hidden"))]
+
+
 async def _fetch_google_events(
     access_token: str,
     *,
     time_min: datetime,
     time_max: datetime,
+    calendar_id: str = "primary",
 ) -> list[dict]:
     headers = {"Authorization": f"Bearer {access_token}"}
+    url = GOOGLE_EVENTS_URL.format(quote(calendar_id, safe=""))
     params = {
         "singleEvents": "true",
         "orderBy": "startTime",
@@ -146,7 +171,7 @@ async def _fetch_google_events(
             req_params = dict(params)
             if page_token:
                 req_params["pageToken"] = page_token
-            resp = await client.get(GOOGLE_EVENTS_URL, headers=headers, params=req_params)
+            resp = await client.get(url, headers=headers, params=req_params)
             if resp.status_code >= 400:
                 text = resp.text[:300].replace("\n", " ")
                 raise RuntimeError(f"Google Calendar events fetch failed ({resp.status_code}): {text}")
@@ -179,8 +204,8 @@ async def sync_google_calendar(
     db: AsyncSession,
     *,
     user_id: int,
-    days_back: int = 1,
-    days_ahead: int = 30,
+    days_back: int = 7,
+    days_ahead: int = 60,
 ) -> dict:
     token_result = await db.execute(select(GoogleOAuthToken).where(GoogleOAuthToken.user_id == user_id))
     token_row = token_result.scalar_one_or_none()
@@ -193,7 +218,21 @@ async def sync_google_calendar(
     now = datetime.now(timezone.utc)
     time_min = now - timedelta(days=days_back)
     time_max = now + timedelta(days=days_ahead)
-    remote_events = await _fetch_google_events(access_token, time_min=time_min, time_max=time_max)
+
+    # Every calendar switched on in Google, not just the main one. The main
+    # one keeps the id "primary" so events imported before this still match.
+    remote_events: list[tuple[str, dict, dict]] = []
+    failed_calendars: set[str] = set()
+    for cal in await _fetch_calendars(access_token):
+        cal_id = "primary" if cal.get("primary") else cal["id"]
+        try:
+            events = await _fetch_google_events(access_token, time_min=time_min, time_max=time_max, calendar_id=cal_id)
+        except RuntimeError as e:
+            # One unreadable calendar must not stop the rest, or hide its events
+            logger.warning("Google calendar %s skipped for user %s: %s", cal_id, user_id, e)
+            failed_calendars.add(cal_id)
+            continue
+        remote_events.extend((cal_id, cal, event) for event in events)
 
     local_result = await db.execute(
         select(ScheduleEvent).where(ScheduleEvent.user_id == user_id)
@@ -203,20 +242,21 @@ async def sync_google_calendar(
     for ev in local_events:
         payload = ev.event_data or {}
         if payload.get("source") == "google_calendar" and payload.get("google_event_id"):
-            existing_google[payload["google_event_id"]] = ev
+            existing_google[(payload.get("calendar_id") or "primary", payload["google_event_id"])] = ev
 
     created = 0
     updated = 0
     deactivated = 0
-    remote_ids: set[str] = set()
+    remote_ids: set[tuple[str, str]] = set()
 
-    for event in remote_events:
+    for cal_id, cal, event in remote_events:
         google_event_id = event.get("id")
         if not google_event_id:
             continue
-        remote_ids.add(google_event_id)
+        key = (cal_id, google_event_id)
+        remote_ids.add(key)
         status = (event.get("status") or "").lower()
-        existing = existing_google.get(google_event_id)
+        existing = existing_google.get(key)
 
         if status == "cancelled":
             if existing and existing.is_active:
@@ -236,7 +276,9 @@ async def sync_google_calendar(
         payload = {
             "source": "google_calendar",
             "google_event_id": google_event_id,
-            "calendar_id": "primary",
+            "calendar_id": cal_id,
+            "calendar_name": cal.get("summaryOverride") or cal.get("summary"),
+            "color": cal.get("backgroundColor"),   # the calendar's colour in Google
             "status": status,
             "html_link": event.get("htmlLink"),
             "all_day": bool((event.get("start") or {}).get("date")),
@@ -278,10 +320,12 @@ async def sync_google_calendar(
     # Only events inside the fetched window can be "gone from Google"; older
     # ones were simply not asked for, and used to vanish a day after each sync.
     # The window's first and last days are only partly covered, so skip them.
-    for google_event_id, existing in existing_google.items():
+    # A calendar switched off in Google drops out too; one that failed to load
+    # this time keeps its events.
+    for key, existing in existing_google.items():
         day = existing.specific_date.date() if existing.specific_date else None
         in_window = day is not None and time_min.date() < day < time_max.date()
-        if in_window and google_event_id not in remote_ids and existing.is_active:
+        if in_window and key[0] not in failed_calendars and key not in remote_ids and existing.is_active:
             existing.is_active = False
             deactivated += 1
 

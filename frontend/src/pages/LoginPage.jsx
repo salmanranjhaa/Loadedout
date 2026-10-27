@@ -3,7 +3,6 @@ import { Eye, EyeOff } from "lucide-react";
 import {
   authAPI,
   getGoogleOAuthOrigin,
-  googleNativeSignIn,
   isNativePlatform,
   runGoogleAuthFlow,
   setToken,
@@ -73,16 +72,12 @@ export default function LoginPage({ onLogin }) {
     setGoogleLoading(true);
     try {
       const googleMode = mode === "signup" ? "signup" : "login";
-      if (isNativePlatform()) {
-        const { idToken } = await googleNativeSignIn();
-        const data = await authAPI.googleIdToken(idToken, googleMode);
-        setToken(data.access_token, data.refresh_token);
-      } else {
-        const { auth_url } = await authAPI.getGoogleLoginUrl(getGoogleOAuthOrigin(), false, googleMode);
-        const payload = await runGoogleAuthFlow(auth_url, googleMode);
-        if (!payload.access_token || !payload.refresh_token) throw new Error("Google auth did not return tokens");
-        setToken(payload.access_token, payload.refresh_token);
-      }
+      // The app opens Google in the browser too, like Connect does. Android's
+      // own sign-in sheet failed on the phone before ever reaching the server.
+      const { auth_url } = await authAPI.getGoogleLoginUrl(getGoogleOAuthOrigin(), isNativePlatform(), googleMode);
+      const payload = await runGoogleAuthFlow(auth_url, googleMode);
+      if (!payload.access_token || !payload.refresh_token) throw new Error("Google auth did not return tokens");
+      setToken(payload.access_token, payload.refresh_token);
       onLogin();
     } catch (err) {
       setError(err.message || "Google authentication failed");

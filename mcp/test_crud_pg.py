@@ -90,6 +90,11 @@ async def main():
     await call("update_meal_log", log_id=m["id"], name="Rice bowl (large)", calories=800, notes="extra rice")
     got = (await call("get_meal_log"))["entries"][0]
     assert (got["name"], got["calories"], got["notes"]) == ("Rice bowl (large)", 800, "extra rice"), got
+    rice = [{"name": "Rice", "amount_g": 200, "calories": 260, "protein": 5.4}]
+    await call("update_meal_log", log_id=m["id"], custom_ingredients=rice)
+    assert (await call("get_meal_log"))["entries"][0]["custom_ingredients"] == rice
+    await call("update_meal_log", log_id=m["id"], custom_ingredients=[])
+    assert (await call("get_meal_log"))["entries"][0]["custom_ingredients"] is None
     await refused("update_meal_log", log_id=m["id"], calories=-1)
     await call("update_meal_log", log_id=m["id"], date=yesterday)
     assert (await call("get_meal_log"))["entries"] == [] and len((await call("get_meal_log", date=yesterday))["entries"]) == 1

@@ -63,10 +63,13 @@ def test_late_night_date():
 def test_sync_keeps_past_events():
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    def local(day, gid):
+    def local(day, gid, cal=None):
+        data = {"source": "google_calendar", "google_event_id": gid}   # imported before calendar ids
+        if cal:
+            data["calendar_id"] = cal
         return ScheduleEvent(user_id=1, title=gid, event_type=EventType.ROUTINE, day_of_week=day.weekday(),
                              start_time=time(9), end_time=time(10), specific_date=day, is_active=True,
-                             event_data={"source": "google_calendar", "google_event_id": gid})
+                             event_data=data)
 
     async def setup():
         async with engine.begin() as conn:
@@ -75,18 +78,39 @@ def test_sync_keeps_past_events():
         async with Session() as s:
             s.add(User(id=1, username="me", email="me@example.com", hashed_password="x"))
             s.add(GoogleOAuthToken(user_id=1, google_sub="sub", access_token="at", scopes=gcal.CALENDAR_READONLY_SCOPE))
-            s.add_all([local(today - timedelta(days=5), "past"), local(today + timedelta(days=3), "removed")])
+            s.add_all([
+                local(today - timedelta(days=20), "past"),
+                local(today + timedelta(days=3), "removed"),
+                local(today + timedelta(days=3), "kept", cal="broken"),
+            ])
             await s.commit()
 
     tomorrow = (today + timedelta(days=1)).date().isoformat()
+    race = (today + timedelta(days=2)).replace(hour=17).isoformat()
+    by_calendar = {
+        "primary": [{"id": "new", "summary": "Dentist", "start": {"date": tomorrow}, "end": {"date": tomorrow}}],
+        "f1@group": [{"id": "gp", "summary": "Formula 1 race", "start": {"dateTime": race}, "end": {"dateTime": race}}],
+    }
+    fetched = []
 
-    async def fetch(access_token, *, time_min, time_max):
-        return [{"id": "new", "summary": "Dentist", "start": {"date": tomorrow}, "end": {"date": tomorrow}}]
+    async def calendars(access_token):
+        return [c for c in [
+            {"id": "me@gmail.com", "primary": True},
+            {"id": "f1@group", "selected": True, "summary": "F1", "backgroundColor": "#ff7537"},
+            {"id": "broken", "selected": True},
+            {"id": "off@group", "selected": False},
+        ] if c.get("primary") or c.get("selected")]
+
+    async def fetch(access_token, *, time_min, time_max, calendar_id):
+        fetched.append(calendar_id)
+        if calendar_id == "broken":
+            raise RuntimeError("Google Calendar events fetch failed (404)")
+        return by_calendar[calendar_id]
 
     async def token(db, row):
         return "at"
 
-    gcal._fetch_google_events, gcal._ensure_access_token = fetch, token
+    gcal._fetch_calendars, gcal._fetch_google_events, gcal._ensure_access_token = calendars, fetch, token
 
     async def run():
         async with Session() as db:
@@ -99,8 +123,12 @@ def test_sync_keeps_past_events():
     result, rows = asyncio.run(run())
     assert rows["past"].is_active, "an event older than the sync window must stay"
     assert not rows["removed"].is_active, "an event inside the window that left Google goes"
+    assert rows["kept"].is_active, "a calendar that failed to load keeps its events"
     assert rows["new"].event_data["all_day"] and rows["new"].specific_date.date().isoformat() == tomorrow
-    assert result["created"] == 1 and result["deactivated"] == 1, result
+    # Other switched-on calendars come in with their colour; switched-off ones aren't read
+    assert rows["gp"].event_data["calendar_id"] == "f1@group" and rows["gp"].event_data["color"] == "#ff7537"
+    assert sorted(fetched) == ["broken", "f1@group", "primary"], fetched
+    assert result["created"] == 2 and result["deactivated"] == 1, result
 
 
 if __name__ == "__main__":
