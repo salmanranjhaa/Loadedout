@@ -35,9 +35,13 @@ HEALTH_DAYS_FIRST_SYNC = 30
 
 
 class GarminError(Exception):
-    def __init__(self, message: str, key_problem: bool = False):
+    def __init__(self, message: str, key_problem: bool = False, rate_limited: bool = False):
         super().__init__(message)
         self.key_problem = key_problem
+        self.rate_limited = rate_limited
+
+
+SLOW_DOWN = "Garmin asked to slow down; the rest comes in with the next sync."
 
 
 # ---- keys ----
@@ -88,8 +92,11 @@ async def get_connection(db, user_id: int, create: bool = False):
 # ---- the API ----
 
 class Garmin:
-    """Calls for one key. Access tokens last 24 hours, so they are reused."""
+    """Calls for one key. Access tokens last 24 hours, so they are reused.
+    Calls are spaced out: Garmin answers 429 after a burst of about a hundred."""
     _tokens: dict = {}
+    _last_call = 0.0
+    MIN_GAP = 0.7                    # seconds between calls, for every key in this process
 
     def __init__(self, key: str, client: httpx.AsyncClient):
         self.key, self.client = key, client
@@ -111,17 +118,30 @@ class Garmin:
 
     async def get(self, path: str, raw: bool = False, **params):
         for attempt in range(3):
+            wait = Garmin._last_call + self.MIN_GAP - time.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            Garmin._last_call = time.time()
             r = await self.client.get(BASE + path, params=params or None,
                                       headers={"Authorization": f"Bearer {await self.token()}"})
             if r.status_code == 401 and attempt == 0:
                 self._tokens.pop(self.key_id, None)          # token expired early: get a new one
                 continue
-            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            if r.status_code == 429 and attempt < 2:
+                try:
+                    retry_after = float(r.headers.get("Retry-After", ""))
+                except ValueError:
+                    retry_after = 20 * (attempt + 1)
+                await asyncio.sleep(min(retry_after, 60))
+                continue
+            if r.status_code in (500, 502, 503, 504) and attempt < 2:
                 await asyncio.sleep(2 * (attempt + 1))
                 continue
             break
         if r.status_code == 204:
             return None
+        if r.status_code == 429:
+            raise GarminError(SLOW_DOWN, rate_limited=True)
         if r.status_code >= 400:
             raise GarminError(f"Garmin refused {path.split('/')[1]} ({r.status_code}).")
         return r.content if raw else r.json()
@@ -343,85 +363,89 @@ def _clock(ms):
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%H:%M") if ms else None
 
 
-async def sync_health(db, g: Garmin, user_id: int, start: date, end: date, opts: dict) -> int:
+async def _save_day(db, user_id: int, d: date, x: dict) -> bool:
+    fields = {k: x.get(k) for k in ("steps", "step_goal", "resting_hr", "sleep_seconds", "stress_avg")}
+    if not any(v is not None for v in fields.values()) and not x["data"]:
+        return False
+    row = (await db.execute(select(HealthDay).where(HealthDay.user_id == user_id, HealthDay.date == d))).scalar_one_or_none()
+    if row is None:
+        row = HealthDay(user_id=user_id, date=d, data={})
+        db.add(row)
+    for k, v in fields.items():
+        if v is not None:
+            setattr(row, k, v)
+    row.data = {**(row.data or {}), **x["data"]}
+    await db.flush()
+    return True
+
+
+async def sync_health(db, g: Garmin, user_id: int, start: date, end: date, opts: dict) -> tuple:
+    """Days from start to end, oldest first, each saved as it comes in. Returns
+    (days saved, the day to carry on from when Garmin asked to slow down, else None)."""
     days: dict = {}
 
     def day(d):
         return days.setdefault(date.fromisoformat(str(d)[:10]), {"data": {}})
 
-    weeks = []
-    s = start
-    while s <= end:                           # Garmin refuses longer ranges for these
-        weeks.append((s, min(s + timedelta(days=6), end)))
-        s += timedelta(days=7)
+    d, saved = start, 0
+    try:
+        if opts["health"]:
+            s = start
+            while s <= end:                   # 7 days at a time: Garmin refuses longer ranges for these
+                e = min(s + timedelta(days=6), end)
+                for row in await g.get(f"/usersummary-service/stats/steps/daily/{s}/{e}") or []:
+                    x = day(row["calendarDate"])
+                    x["steps"], x["step_goal"] = row.get("totalSteps"), row.get("stepGoal")
+                for row in await g.get(f"/usersummary-service/stats/stress/daily/{s}/{e}") or []:
+                    level = (row.get("values") or {}).get("overallStressLevel")
+                    if isinstance(level, int) and level >= 0:
+                        day(row["calendarDate"])["stress_avg"] = level
+                for row in await g.get("/wellness-service/wellness/bodyBattery/reports/daily", startDate=s, endDate=e) or []:
+                    values = [v for v in row.get("bodyBatteryValuesArray") or [] if isinstance(v, list) and len(v) >= 2 and v[-1] is not None]
+                    if values:
+                        levels = [v[-1] for v in values]
+                        day(row["date"])["data"]["body_battery"] = {
+                            "charged": row.get("charged"), "drained": row.get("drained"),
+                            "high": max(levels), "low": min(levels),
+                            "samples": [[_minute_of_day(v[0], row["startTimestampGMT"]), v[-1]] for v in values],
+                        }
+                s = e + timedelta(days=1)
 
-    if opts["health"]:
-        for s, e in weeks:
-            for row in await g.get(f"/usersummary-service/stats/steps/daily/{s}/{e}") or []:
-                x = day(row["calendarDate"])
-                x["steps"], x["step_goal"] = row.get("totalSteps"), row.get("stepGoal")
-            for row in await g.get(f"/usersummary-service/stats/stress/daily/{s}/{e}") or []:
-                level = (row.get("values") or {}).get("overallStressLevel")
-                if isinstance(level, int) and level >= 0:
-                    day(row["calendarDate"])["stress_avg"] = level
-            for row in await g.get("/wellness-service/wellness/bodyBattery/reports/daily", startDate=s, endDate=e) or []:
-                values = [v for v in row.get("bodyBatteryValuesArray") or [] if isinstance(v, list) and len(v) >= 2 and v[-1] is not None]
-                if values:
-                    levels = [v[-1] for v in values]
-                    day(row["date"])["data"]["body_battery"] = {
-                        "charged": row.get("charged"), "drained": row.get("drained"),
-                        "high": max(levels), "low": min(levels),
-                        "samples": [[_minute_of_day(v[0], row["startTimestampGMT"]), v[-1]] for v in values],
-                    }
-        d = start
         while d <= end:
-            hr = await g.get("/wellness-service/wellness/dailyHeartRate", date=d) or {}
-            samples = [[_minute_of_day(t, hr["startTimestampGMT"]), b] for t, b in hr.get("heartRateValues") or [] if b]
-            if samples or hr.get("restingHeartRate"):
-                x = day(d)
-                x["resting_hr"] = hr.get("restingHeartRate")
-                x["data"]["heart_rate"] = {"resting": hr.get("restingHeartRate"), "min": hr.get("minHeartRate"),
-                                           "max": hr.get("maxHeartRate"), "resting_7d": hr.get("lastSevenDaysAvgRestingHeartRate"),
-                                           "samples": samples}
-            summary = await g.get("/usersummary-service/usersummary/daily", calendarDate=d) or {}
-            # A day the watch was not worn still has a resting-calorie summary: skip it
-            if summary.get("totalSteps") or summary.get("activeKilocalories"):
-                day(d)["data"]["summary"] = {k: summary.get(k) for k in (
-                    "activeKilocalories", "totalKilocalories", "moderateIntensityMinutes", "vigorousIntensityMinutes",
-                    "totalDistanceMeters", "floorsAscended", "highlyActiveSeconds", "activeSeconds", "sedentarySeconds")
-                    if summary.get(k) is not None}
+            x = day(d)
+            # Heart rate and the day summary only for days the watch was worn: half the calls
+            worn = x.get("steps") is not None or x.get("stress_avg") is not None or "body_battery" in x["data"]
+            if opts["health"] and worn:
+                hr = await g.get("/wellness-service/wellness/dailyHeartRate", date=d) or {}
+                samples = [[_minute_of_day(t, hr["startTimestampGMT"]), b] for t, b in hr.get("heartRateValues") or [] if b]
+                if samples or hr.get("restingHeartRate"):
+                    x["resting_hr"] = hr.get("restingHeartRate")
+                    x["data"]["heart_rate"] = {"resting": hr.get("restingHeartRate"), "min": hr.get("minHeartRate"),
+                                               "max": hr.get("maxHeartRate"), "resting_7d": hr.get("lastSevenDaysAvgRestingHeartRate"),
+                                               "samples": samples}
+                summary = await g.get("/usersummary-service/usersummary/daily", calendarDate=d) or {}
+                if summary.get("totalSteps") or summary.get("activeKilocalories"):
+                    x["data"]["summary"] = {k: summary.get(k) for k in (
+                        "activeKilocalories", "totalKilocalories", "moderateIntensityMinutes", "vigorousIntensityMinutes",
+                        "totalDistanceMeters", "floorsAscended", "highlyActiveSeconds", "activeSeconds", "sedentarySeconds")
+                        if summary.get(k) is not None}
+            if opts["sleep"]:
+                sl = await g.get("/sleep-service/sleep/dailySleep", date=d) or {}
+                if sl.get("sleepTimeSeconds"):
+                    x["sleep_seconds"] = sl["sleepTimeSeconds"]
+                    x["data"]["sleep"] = {"seconds": sl["sleepTimeSeconds"], "deep_s": sl.get("deepSleepSeconds"),
+                                          "light_s": sl.get("lightSleepSeconds"), "rem_s": sl.get("remSleepSeconds"),
+                                          "awake_s": sl.get("awakeSleepSeconds"),
+                                          "start": _clock(sl.get("sleepStartTimestampLocal")),
+                                          "end": _clock(sl.get("sleepEndTimestampLocal"))}
+            saved += await _save_day(db, user_id, d, x)
+            await db.commit()
             d += timedelta(days=1)
-
-    if opts["sleep"]:
-        d = start
-        while d <= end:
-            sl = await g.get("/sleep-service/sleep/dailySleep", date=d) or {}
-            if sl.get("sleepTimeSeconds"):
-                x = day(d)
-                x["sleep_seconds"] = sl["sleepTimeSeconds"]
-                x["data"]["sleep"] = {"seconds": sl["sleepTimeSeconds"], "deep_s": sl.get("deepSleepSeconds"),
-                                      "light_s": sl.get("lightSleepSeconds"), "rem_s": sl.get("remSleepSeconds"),
-                                      "awake_s": sl.get("awakeSleepSeconds"),
-                                      "start": _clock(sl.get("sleepStartTimestampLocal")),
-                                      "end": _clock(sl.get("sleepEndTimestampLocal"))}
-            d += timedelta(days=1)
-
-    saved = 0
-    for d, x in days.items():
-        fields = {k: x.get(k) for k in ("steps", "step_goal", "resting_hr", "sleep_seconds", "stress_avg")}
-        if not any(v is not None for v in fields.values()) and not x["data"]:
-            continue
-        row = (await db.execute(select(HealthDay).where(HealthDay.user_id == user_id, HealthDay.date == d))).scalar_one_or_none()
-        if row is None:
-            row = HealthDay(user_id=user_id, date=d, data={})
-            db.add(row)
-        for k, v in fields.items():
-            if v is not None:
-                setattr(row, k, v)
-        row.data = {**(row.data or {}), **x["data"]}
-        saved += 1
-    await db.flush()
-    return saved
+    except GarminError as e:
+        if not e.rate_limited:
+            raise
+        return saved, d
+    return saved, None
 
 
 # ---- one sync ----
@@ -439,7 +463,11 @@ async def sync_user(db, user_id: int, full: bool = False) -> dict:
     first = last is None
     started = datetime.now(timezone.utc)
     today = date.today()
-    result = {"activities_added": 0, "linked": 0, "health_days": 0}
+    previous = conn.last_result or {}
+    # Health carries on from where the last sync stopped (yesterday after a full one)
+    health_from = previous.get("health_next_from")
+    result = {"activities_added": 0, "linked": 0, "health_days": 0, "health_next_from": health_from}
+    complete = True
     try:
         async with httpx.AsyncClient(timeout=45) as client:
             g = Garmin(key, client)
@@ -447,14 +475,22 @@ async def sync_user(db, user_id: int, full: bool = False) -> dict:
                 since = None if (first or full) and opts["full_history"] else \
                     (today - timedelta(days=30) if first or full else last.date() - timedelta(days=2))
                 floors = await g.zone_floors()
-                async for a in g.activities(since):
-                    added, linked = await import_activity(db, g, user_id, a, floors)
-                    await db.commit()          # an error later keeps what came in so far
-                    result["activities_added"] += added
-                    result["linked"] += linked
-            if opts["health"] or opts["sleep"]:
-                back = HEALTH_DAYS_FIRST_SYNC if first or full else (today - last.date()).days + 1
-                result["health_days"] = await sync_health(db, g, user_id, today - timedelta(days=max(back, 2) - 1), today, opts)
+                try:
+                    async for a in g.activities(since):
+                        added, linked = await import_activity(db, g, user_id, a, floors)
+                        await db.commit()          # an error later keeps what came in so far
+                        result["activities_added"] += added
+                        result["linked"] += linked
+                except GarminError as e:
+                    if not e.rate_limited:
+                        raise
+                    complete = False               # the next sync lists them again and adds the missing ones
+            if complete and (opts["health"] or opts["sleep"]):
+                start = today - timedelta(days=HEALTH_DAYS_FIRST_SYNC - 1) if full or not health_from \
+                    else min(date.fromisoformat(health_from), today - timedelta(days=1))
+                result["health_days"], resume = await sync_health(db, g, user_id, start, today, opts)
+                result["health_next_from"] = (resume or today - timedelta(days=1)).isoformat()
+                complete = resume is None
     except (GarminError, httpx.HTTPError) as e:
         await db.rollback()
         conn = await get_connection(db, user_id, create=True)
@@ -465,7 +501,13 @@ async def sync_user(db, user_id: int, full: bool = False) -> dict:
         if isinstance(e, GarminError):
             raise
         raise GarminError(conn.last_error) from e
-    conn.status, conn.last_sync_at, conn.last_result, conn.last_error = "ok", started, result, None
+    # Not finished (Garmin asked to slow down): keep the old sync time, so the
+    # schedule comes back in 10 minutes and carries on
+    if complete:
+        conn.last_sync_at = started
+    else:
+        result["note"] = SLOW_DOWN
+    conn.status, conn.last_result, conn.last_error = "ok", result, None
     await db.commit()
     return result
 
@@ -513,8 +555,12 @@ async def sync_and_wait(user_id: int, full: bool = False, wait_seconds: float = 
 def _due(conn) -> bool:
     opts = settings_of(conn)
     hours = opts.get("auto_sync_hours") or 0
+    paused = (conn.last_result or {}).get("note") == SLOW_DOWN       # carry on 10 minutes later
+    last = conn.last_sync_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
     return (hours > 0 and conn.status != "key_error" and key_for(conn, conn.user_id)[0] is not None
-            and (conn.last_sync_at is None or datetime.now(timezone.utc) - conn.last_sync_at >= timedelta(hours=hours)))
+            and (last is None or paused or datetime.now(timezone.utc) - last >= timedelta(hours=hours)))
 
 
 async def scheduler():
