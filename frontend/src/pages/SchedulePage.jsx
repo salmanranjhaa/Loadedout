@@ -55,6 +55,8 @@ function nowLinePx() {
 }
 
 const isGoogle = (e) => e.event_data?.source === "google_calendar";
+// Google events keep their calendar's colour (Formula 1 orange, say), like in Google
+const tileColor = (e) => (isGoogle(e) && e.event_data?.color) || catColors[e.event_type] || T.textMuted;
 const isAllDay = (e) => !!e.event_data?.all_day || (e.start_time?.startsWith("00:00") && e.end_time?.startsWith("23:59"));
 
 // Google Calendar-style columns: events whose tiles overlap sit side by side,
@@ -282,7 +284,7 @@ function EventCard({ item, onEdit, onDelete }) {
   if (end <= start) return null;
   const top = minutesToPx(start);
   const height = ((end - start) / 60) * PX_PER_HOUR - TILE_GAP;
-  const color = catColors[event.event_type] || T.textMuted;
+  const color = tileColor(event);
   const ink = "#0A0A0F";
   const google = isGoogle(event);
   const compact = height < 40;
@@ -417,7 +419,7 @@ export default function SchedulePage({ profile, onProfile }) {
       const stale = !status.last_sync_at || Date.now() - new Date(status.last_sync_at).getTime() > 15 * 60000;
       if (status.connected && stale) {
         try {
-          await scheduleAPI.googleSync(1, 30);
+          await scheduleAPI.googleSync();
           setGoogleStatus(await scheduleAPI.googleStatus());
           setSyncTick((t) => t + 1);
         } catch {}
@@ -448,7 +450,7 @@ export default function SchedulePage({ profile, onProfile }) {
   async function syncGoogle() {
     setGoogleSyncing(true);
     try {
-      await scheduleAPI.googleSync(1, 30);
+      await scheduleAPI.googleSync();
       const status = await scheduleAPI.googleStatus();
       setGoogleStatus(status);
       await refreshEvents();
@@ -639,7 +641,7 @@ export default function SchedulePage({ profile, onProfile }) {
           {allDay.length > 0 && (
             <div style={{ margin: "0 12px 6px", paddingLeft: GUTTER, display: "flex", flexWrap: "wrap", gap: 4 }}>
               {allDay.map((e) => (
-                <span key={e.id} style={{ fontSize: 11, fontWeight: 700, color: "#0A0A0F", background: catColors[e.event_type] || T.textMuted, opacity: 0.92, borderRadius: 6, padding: "3px 8px", display: "flex", alignItems: "center", gap: 5 }}>
+                <span key={e.id} style={{ fontSize: 11, fontWeight: 700, color: "#0A0A0F", background: tileColor(e), opacity: 0.92, borderRadius: 6, padding: "3px 8px", display: "flex", alignItems: "center", gap: 5 }}>
                   {e.title}
                   {isGoogle(e) && <Icon name="google" size={10} color="#0A0A0F" />}
                 </span>

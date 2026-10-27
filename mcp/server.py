@@ -90,6 +90,14 @@ def _parse_time(t) -> time_cls:
     return time_cls(h, m, s)
 
 
+# The app lists these under the meal; same shape as meal template ingredients.
+INGREDIENTS_HELP = (
+    "What the meal is made of, one object per ingredient: "
+    '{"name": "Oats", "amount_g": 40, "calories": 150, "protein": 5.3}. '
+    "calories and protein are for that amount; add carbs_g and fat_g if known."
+)
+
+
 # Everything type-specific about a workout lives in workout_logs.details (JSON),
 # next to the name and the sets. These shared fields are stored there too.
 WORKOUT_DETAIL_ARGS = {
@@ -404,6 +412,7 @@ async def list_tools() -> list[Tool]:
                     "custom_ingredients": {
                         "type": "array",
                         "items": {"type": "object"},
+                        "description": INGREDIENTS_HELP,
                     },
                 },
                 "required": ["meal_type", "name", "calories", "protein_g"],
@@ -960,6 +969,11 @@ async def list_tools() -> list[Tool]:
                     "fat_g": {"description": "numeric, 0 or more"},
                     "date": {"type": "string", "description": "YYYY-MM-DD"},
                     "notes": {"type": "string"},
+                    "custom_ingredients": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": INGREDIENTS_HELP + " Replaces the whole list; [] clears it.",
+                    },
                 },
                 "required": ["log_id"],
             },
@@ -1697,14 +1711,18 @@ async def _get_meal_log(conn: asyncpg.Connection, user_id: int, args: dict) -> d
     log_date = date_cls.fromisoformat(args["date"]) if args.get("date") else date_cls.today()
     rows = await conn.fetch(
         """
-        SELECT id, meal_type, name, calories, protein_g, carbs_g, fat_g, notes, created_at
+        SELECT id, meal_type, name, calories, protein_g, carbs_g, fat_g, notes, custom_ingredients, created_at
         FROM meal_logs
         WHERE user_id = $1 AND date = $2
         ORDER BY created_at
         """,
         user_id, log_date,
     )
-    return {"date": str(log_date), "entries": [_serialize(r) for r in rows], "count": len(rows)}
+    entries = [_serialize(r) for r in rows]
+    for e in entries:   # asyncpg hands JSON columns back as text
+        if isinstance(e.get("custom_ingredients"), str):
+            e["custom_ingredients"] = json.loads(e["custom_ingredients"])
+    return {"date": str(log_date), "entries": entries, "count": len(rows)}
 
 
 async def _get_macro_summary(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
@@ -2567,7 +2585,9 @@ async def _update_meal_log(conn: asyncpg.Connection, user_id: int, args: dict) -
         values["date"] = date_cls.fromisoformat(args["date"])
     if "notes" in args:
         values["notes"] = args["notes"] or None
-    return await _update_owned(conn, "meal_logs", _i(args["log_id"]), user_id, values)
+    if "custom_ingredients" in args:
+        values["custom_ingredients"] = json.dumps(args["custom_ingredients"]) if args["custom_ingredients"] else None
+    return await _update_owned(conn, "meal_logs", _i(args["log_id"]), user_id, values, jsonb=("custom_ingredients",))
 
 
 async def _delete_meal_template(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:

@@ -516,6 +516,7 @@ export default function MealsPage({ profile, onProfile }) {
         protein_g: meal.protein_g || 0,
         carbs_g: meal.carbs_g || 0,
         fat_g: meal.fat_g || 0,
+        ingredients: meal.custom_ingredients || [],
       });
       showToast("Saved as template", "success");
       refresh();

@@ -1,7 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
-import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 import { isOnline, queueRequest, initOfflineQueue } from "./offline";
 
@@ -195,11 +194,6 @@ export const authAPI = {
     request(`/auth/google/login-url?origin=${encodeURIComponent(origin)}${native ? "&native=1" : ""}&mode=${encodeURIComponent(mode)}`),
   getGoogleConnectUrl: (origin, native = false) =>
     request(`/auth/google/connect-url?origin=${encodeURIComponent(origin)}${native ? "&native=1" : ""}`),
-  googleIdToken: (id_token, mode) =>
-    request("/auth/google/id-token", {
-      method: "POST",
-      body: JSON.stringify({ id_token, mode }),
-    }),
   requestPasswordReset: (email) =>
     request("/auth/request-password-reset", {
       method: "POST",
@@ -211,14 +205,6 @@ export const authAPI = {
       body: JSON.stringify({ token, new_password }),
     }),
 };
-
-export async function googleNativeSignIn() {
-  await GoogleAuth.initialize();
-  const user = await GoogleAuth.signIn();
-  const idToken = user?.authentication?.idToken;
-  if (!idToken) throw new Error("Google Sign-In did not return an ID token");
-  return { idToken };
-}
 
 export const scheduleAPI = {
   getAll: (day, targetDate) => {
@@ -232,7 +218,7 @@ export const scheduleAPI = {
   update: (id, data) => request(`/schedule/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id) => request(`/schedule/${id}`, { method: "DELETE" }),
   googleStatus: () => request("/schedule/google/status"),
-  googleSync: (daysBack = 1, daysAhead = 30) =>
+  googleSync: (daysBack = 7, daysAhead = 60) =>
     request("/schedule/google/sync", {
       method: "POST",
       body: JSON.stringify({ days_back: daysBack, days_ahead: daysAhead }),

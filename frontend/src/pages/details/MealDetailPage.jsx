@@ -17,6 +17,63 @@ function inp(focused) {
   };
 }
 
+// Ingredients are [{name, amount_g, calories, protein}], as Claude logs them over
+// MCP and as templates store them. Edited as strings, saved back as numbers.
+const INGREDIENT_NUMS = [["amount_g", "g"], ["calories", "kcal"], ["protein", "protein g"]];
+const toEditable = (list) => (list || []).map((g) => ({
+  orig: g, name: g.name || "",
+  ...Object.fromEntries(INGREDIENT_NUMS.map(([k]) => [k, g[k] == null ? "" : String(g[k])])),
+}));
+function fromEditable(list) {
+  return list.filter((g) => g.name.trim()).map((g) => {
+    const out = { ...g.orig, name: g.name.trim() };
+    for (const [k] of INGREDIENT_NUMS) {
+      const v = parseFloat(g[k]);
+      if (Number.isFinite(v) && v >= 0) out[k] = v; else delete out[k];
+    }
+    return out;
+  });
+}
+const ingredientTotals = (list) => ({
+  calories: Math.round(list.reduce((s, g) => s + (parseFloat(g.calories) || 0), 0)),
+  protein: oneDp(list.reduce((s, g) => s + (parseFloat(g.protein) || 0), 0)),
+});
+const ingredientLine = (g) => [
+  g.amount_g != null && `${oneDp(g.amount_g)} g`,
+  g.calories != null && `${Math.round(g.calories)} kcal`,
+  g.protein != null && `${oneDp(g.protein)} g protein`,
+].filter(Boolean).join(" · ");
+
+function IngredientsCard({ items, notes }) {
+  const totals = ingredientTotals(items);
+  return (
+    <Card style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: items.length ? 10 : 6 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>
+          Ingredients{items.length ? ` (${items.length})` : ""}
+        </div>
+        {totals.calories > 0 && (
+          <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>{totals.calories} kcal · {totals.protein} g protein</div>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.textDim }}>No ingredients yet. Tap Edit to add what's in it.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {items.map((g, i) => (
+            // On narrow phones the numbers drop under the name instead of squeezing it
+            <div key={i} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 10, rowGap: 2, padding: "7px 0", borderTop: i ? `0.5px solid ${T.border}` : "none" }}>
+              <span style={{ fontSize: 13, color: T.text, flex: "1 1 140px", minWidth: 0 }}>{g.name}</span>
+              <span style={{ fontSize: 10.5, color: T.textMuted, fontFamily: T.fontMono, whiteSpace: "nowrap", marginLeft: "auto" }}>{ingredientLine(g)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {notes && <div style={{ fontSize: 11.5, color: T.textMuted, lineHeight: 1.5, marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${T.border}` }}>{notes}</div>}
+    </Card>
+  );
+}
+
 function NumField({ label, value, onChange, color }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -45,7 +102,9 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
     carbs_g: initialC = 0,
     fat_g: initialF = 0,
     date: mealDate,
+    notes,
   } = meal;
+  const ingredients = meal.custom_ingredients || [];
 
   const defaultTargets = { calories: 2100, protein: 190, carbs: 200, fat: 70 };
   const t = { ...defaultTargets, ...targets };
@@ -61,7 +120,10 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
   const [eC, setEC] = useState(String(oneDp(initialC)));
   const [eF, setEF] = useState(String(oneDp(initialF)));
   const [eDate, setEDate] = useState(mealDate || "");
+  const [eIngr, setEIngr] = useState(() => toEditable(ingredients));
   const [servings, setServings] = useState(1);
+  const setIngr = (i, key, value) => setEIngr((list) => list.map((g, j) => (j === i ? { ...g, [key]: value } : g)));
+  const eTotals = ingredientTotals(eIngr);
 
   // Amount stepper, like the pantry: foods logged from search carry their
   // grams in the name ("Banana (100 g)"); anything else steps in servings.
@@ -100,6 +162,7 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
         protein_g: parseFloat(eP) || 0,
         carbs_g: parseFloat(eC) || 0,
         fat_g: parseFloat(eF) || 0,
+        custom_ingredients: fromEditable(eIngr),
         ...(eDate && eDate !== mealDate ? { date: eDate } : {}),
       });
       setEditing(false);
@@ -115,6 +178,7 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
     setEC(String(oneDp(initialC)));
     setEF(String(oneDp(initialF)));
     setEDate(mealDate || "");
+    setEIngr(toEditable(ingredients));
     setServings(1);
     setEditing(false);
   }
@@ -242,6 +306,42 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
               <NumField label="Fat (g)" value={eF} onChange={setEF} color={T.violet} />
             </div>
 
+            {/* Ingredients */}
+            <div>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Ingredients</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {eIngr.map((g, i) => (
+                  <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input value={g.name} onChange={e => setIngr(i, "name", e.target.value)} placeholder="Ingredient" aria-label="Ingredient name"
+                        style={{ ...inp(false), padding: "8px 10px", fontSize: 13 }} />
+                      <button aria-label={`Remove ${g.name || "ingredient"}`} onClick={() => setEIngr((list) => list.filter((_, j) => j !== i))}
+                        style={{ width: 36, flexShrink: 0, background: "none", border: `1px solid ${T.border}`, borderRadius: 10, color: T.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Icon name="x" size={13} />
+                      </button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      {INGREDIENT_NUMS.map(([k, label]) => (
+                        <input key={k} type="number" inputMode="decimal" min={0} value={g[k]} onChange={e => setIngr(i, k, e.target.value)}
+                          placeholder={label} aria-label={label}
+                          style={{ ...inp(false), padding: "7px 8px", fontSize: 13, fontFamily: T.fontMono }} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => setEIngr((list) => [...list, ...toEditable([{ name: "" }])])}
+                  style={{ padding: "10px 0", background: "none", border: `1px dashed ${T.borderStrong}`, borderRadius: 10, color: T.teal, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  + Add ingredient
+                </button>
+                {eTotals.calories > 0 && (Math.round(parseFloat(eCal) || 0) !== eTotals.calories || oneDp(parseFloat(eP) || 0) !== eTotals.protein) && (
+                  <button onClick={() => { setECal(String(eTotals.calories)); setEP(String(eTotals.protein)); }}
+                    style={{ padding: "8px 0", background: "none", border: "none", color: T.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+                    Use ingredient totals ({eTotals.calories} kcal, {eTotals.protein} g protein)
+                  </button>
+                )}
+              </div>
+            </div>
+
             <button onClick={handleSave} disabled={saving}
               style={{
                 padding: "13px 0", background: saving ? T.elevated : T.teal, border: "none",
@@ -280,6 +380,11 @@ export default function MealDetailPage({ meal = {}, targets = {}, onBack, onDele
                   ))}
                 </div>
               </Card>
+            </div>
+
+            {/* What it's made of */}
+            <div style={{ padding: "0 16px 16px" }}>
+              <IngredientsCard items={ingredients} notes={notes} />
             </div>
 
             {/* AI insight */}
