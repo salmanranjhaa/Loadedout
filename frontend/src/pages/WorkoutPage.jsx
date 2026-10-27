@@ -8,6 +8,7 @@ import { showToast } from "../utils/toast";
 import ExerciseBrowser from "../components/workout/ExerciseBrowser";
 import ActiveWorkout from "../components/workout/ActiveWorkout";
 import WorkoutHistory from "../components/workout/WorkoutHistory";
+import BodyToday from "../components/health/BodyToday";
 import exerciseData from "../lib/exercises.json";
 
 const SPORTS = [
@@ -771,9 +772,10 @@ export default function WorkoutPage({ profile, onProfile }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, position: "relative" }}>
-      <PageHeader title="Workout" subtitle={headerSubtitle} profile={profile} onProfile={onProfile} />
+      <PageHeader title="Fitness" subtitle={headerSubtitle} profile={profile} onProfile={onProfile} />
 
       <PageScroll>
+        <BodyToday onSynced={refresh} />
         <HeroCard
           onStart={startSuggestedWorkout}
           onBrowse={() => setShowBrowser(true)}

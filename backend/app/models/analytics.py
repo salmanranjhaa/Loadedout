@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, Boolean, Text, ForeignKey, Date, UniqueConstraint
+from sqlalchemy import BigInteger, Column, Integer, String, Float, DateTime, JSON, Boolean, Text, ForeignKey, Date, UniqueConstraint
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -25,6 +25,7 @@ class WeightLog(Base):
 class WorkoutLog(Base):
     """I log workouts to track fitness progress and correlate with nutrition."""
     __tablename__ = "workout_logs"
+    __table_args__ = (UniqueConstraint("user_id", "garmin_activity_id", name="uq_workout_logs_user_garmin"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -52,6 +53,12 @@ class WorkoutLog(Base):
 
     # I store the full AI analysis result from Gemini
     ai_analysis = Column(JSON, nullable=True)
+
+    # The Garmin activity this workout came from or was linked to
+    garmin_activity_id = Column(BigInteger, nullable=True)
+    # Both workouts as they were before being linked into this one, so unlinking
+    # can split them again (see app/services/workout_links.py)
+    link_backup = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

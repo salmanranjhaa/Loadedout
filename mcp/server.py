@@ -32,6 +32,9 @@ DATABASE_URL = os.environ.get(
     "MCP_DATABASE_URL",
     "postgresql://lifeplan_user:changeme@db:5432/lifeplan_db",
 )
+# The app's backend, for what only it does (Garmin sync, joining workouts)
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000/api/v1")
+INTERNAL_API_TOKEN = os.environ.get("INTERNAL_API_TOKEN", "")
 
 # I keep a module-level connection pool so all tool calls share it
 _pool: Optional[asyncpg.Pool] = None
@@ -522,7 +525,8 @@ async def list_tools() -> list[Tool]:
                 "details: everything else about the session, shaped by the workout type (distance, pace, "
                 "splits, power, Hyrox stations, CrossFit parts with scores, BodyPump tracks…). "
                 "Only workout_type is needed; duration_minutes can come from details.moving_time_s or total_time_s. "
-                "energy_level: 1-10 scale."
+                "energy_level: 1-10 scale. Give start_time when you know it: if Garmin already recorded the same "
+                "session, the two are joined into one workout (the answer says so) instead of counting it twice."
             ),
             inputSchema={
                 "type": "object",
@@ -553,7 +557,10 @@ async def list_tools() -> list[Tool]:
             name="get_workouts",
             description=(
                 "Get workout history for the last N days (default 30), newest first, with each workout's "
-                "details (distance, splits, parts, scores…). Filter by workout_type or fetch one workout_id."
+                "details (distance, splits, parts, scores…). Filter by workout_type or fetch one workout_id. "
+                "garmin_activity_id is set for workouts that came from (or were linked to) Garmin; linked means a "
+                "Garmin recording and a logged workout were joined into this one; has_route means there is a GPS route. "
+                "With workout_id and include_track, also returns the route and the pace / heart rate / elevation along it."
             ),
             inputSchema={
                 "type": "object",
@@ -561,8 +568,61 @@ async def list_tools() -> list[Tool]:
                     "days": { "default": 30},
                     "workout_type": {"type": "string"},
                     "workout_id": {"description": "numeric"},
+                    "include_track": {"type": "boolean"},
                 },
                 "required": [],
+            },
+        ),
+        Tool(
+            name="sync_garmin",
+            description=(
+                "Pull new activities (with route, splits and heart rate) and daily health (steps, heart rate, "
+                "sleep, body battery, stress) from the user's Garmin account into the app. Activities that are "
+                "the same session as a workout already logged are joined to it, not added twice. full=true "
+                "re-reads the whole history. A long first sync may still be running when this returns."
+            ),
+            inputSchema={"type": "object", "properties": {"full": {"type": "boolean"}}, "required": []},
+        ),
+        Tool(
+            name="get_daily_health",
+            description=(
+                "Daily watch data from Garmin per day: steps and step goal, resting/min/max heart rate, sleep "
+                "(total, deep, light, REM, awake, start and end), body battery (high, low, charged, drained), "
+                "average stress, active calories and intensity minutes. Days the watch was not worn are missing. "
+                "Defaults to the last 7 days; at most 92 days. include_samples adds the heart rate every 2 minutes "
+                "and the body battery curve (large: use for one or two days)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start": {"type": "string", "description": "YYYY-MM-DD"},
+                    "end": {"type": "string", "description": "YYYY-MM-DD, defaults to today"},
+                    "include_samples": {"type": "boolean"},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="link_workouts",
+            description=(
+                "Join two workouts that are the same session (typically a Garmin recording and the one you "
+                "logged) into one, so it is counted once: Garmin's measurements plus the logged name, notes and "
+                "parts. Without other_workout_id, joins it with the one clear match if there is one, otherwise "
+                "lists the possible matches. Returns the id of the joined workout."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"workout_id": {"description": "numeric"}, "other_workout_id": {"description": "numeric"}},
+                "required": ["workout_id"],
+            },
+        ),
+        Tool(
+            name="unlink_workout",
+            description="Split a joined workout back into the two it was made of. They are not joined again automatically.",
+            inputSchema={
+                "type": "object",
+                "properties": {"workout_id": {"description": "numeric"}},
+                "required": ["workout_id"],
             },
         ),
         Tool(
@@ -1730,7 +1790,22 @@ async def _log_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> di
         _i(args.get("calories_burned_est")),
         _i(args.get("energy_level")),
     )
-    return {"status": "logged", "workout": _serialize(row)}
+    out = {"status": "logged", "workout": _serialize(row)}
+    # Garmin may already have recorded this session: join the two (the backend decides)
+    if INTERNAL_API_TOKEN:
+        try:
+            linked = await _backend("/internal/workouts/link", {"user_id": user_id, "workout_id": row["id"]})
+        except ValueError:
+            linked = {}
+        if linked.get("linked"):
+            out["joined_with_garmin"] = True
+            out["workout"]["id"] = linked["workout_id"]
+            out["note"] = (f"Garmin had already recorded this session, so it was joined into workout "
+                           f"{linked['workout_id']}: Garmin's distance, heart rate and route with your name, notes and parts.")
+        elif linked.get("suggestions"):
+            out["possible_same_session"] = linked["suggestions"]
+            out["note"] = "Several workouts that day could be this session; join the right one with link_workouts."
+    return out
 
 
 async def _get_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
@@ -1748,7 +1823,9 @@ async def _get_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> d
     rows = await conn.fetch(
         f"""
         SELECT id, date, workout_type, duration_minutes, intensity,
-               calories_burned_est, notes, energy_level, details
+               calories_burned_est, notes, energy_level, details, garmin_activity_id,
+               link_backup IS NOT NULL AS linked,
+               EXISTS (SELECT 1 FROM workout_tracks t WHERE t.workout_log_id = workout_logs.id) AS has_route
         FROM workout_logs
         WHERE {" AND ".join(where)}
         ORDER BY date DESC, id DESC
@@ -1762,7 +1839,82 @@ async def _get_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> d
         w["name"] = w["details"].get("name")
         w["exercises"] = w["details"].get("exercises", [])
         workouts.append(w)
+    if args.get("include_track") and args.get("workout_id") is not None and workouts and workouts[0]["has_route"]:
+        track = await conn.fetchrow("SELECT route, streams FROM workout_tracks WHERE workout_log_id = $1 AND user_id = $2",
+                                    workouts[0]["id"], user_id)
+        workouts[0]["track"] = {"route": _json_list(track["route"]), "streams": _json_obj(track["streams"])}
     return {"workouts": workouts, "total": len(workouts)}
+
+
+def _json_list(val) -> list:
+    if isinstance(val, str):
+        with contextlib.suppress(ValueError):
+            val = json.loads(val)
+    return val if isinstance(val, list) else []
+
+
+async def _backend(path: str, payload: dict, timeout: float = 30) -> dict:
+    """Ask the app's backend for what only it does: syncing Garmin and joining
+    workouts. It is reached over the internal network with a shared token."""
+    import httpx
+    if not INTERNAL_API_TOKEN:
+        raise ValueError("Garmin sync and joining workouts are not set up on this server yet.")
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(BACKEND_URL + path, json=payload, headers={"X-Internal-Token": INTERNAL_API_TOKEN})
+    except httpx.HTTPError:
+        raise ValueError("The app's server could not be reached. Try again in a minute.")
+    if r.status_code >= 400:
+        detail = None
+        with contextlib.suppress(ValueError):
+            detail = r.json().get("detail")
+        raise ValueError(detail or f"The app's server answered {r.status_code}.")
+    return r.json()
+
+
+async def _sync_garmin(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    out = await _backend("/internal/garmin/sync", {"user_id": user_id, "full": bool(args.get("full"))}, timeout=75)
+    if out.get("status") == "still_syncing":
+        out["note"] = "A long sync (the whole history) is still running in the app; ask again in a few minutes."
+    return out
+
+
+async def _get_daily_health(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    from datetime import timedelta
+    end = date_cls.fromisoformat(args["end"]) if args.get("end") else date_cls.today()
+    start = date_cls.fromisoformat(args["start"]) if args.get("start") else end - timedelta(days=6)
+    if (end - start).days > 92:
+        raise ValueError("Ask for 92 days at most.")
+    rows = await conn.fetch(
+        """
+        SELECT date, steps, step_goal, resting_hr, sleep_seconds, stress_avg, data
+        FROM health_days WHERE user_id = $1 AND date BETWEEN $2 AND $3 ORDER BY date
+        """,
+        user_id, start, end,
+    )
+    days = []
+    for r in rows:
+        data = _json_obj(r["data"])
+        day = {k: v for k, v in _serialize(r).items() if k != "data" and v is not None}
+        for part in ("heart_rate", "body_battery", "sleep", "summary"):
+            if isinstance(data.get(part), dict):
+                day[part] = {k: v for k, v in data[part].items() if v is not None and (k != "samples" or args.get("include_samples"))}
+        days.append(day)
+    out = {"from": start.isoformat(), "to": end.isoformat(), "days": days}
+    if not days:
+        out["note"] = "No watch data for these days: the watch may not have been worn, or Garmin is not synced yet (sync_garmin)."
+    return out
+
+
+async def _link_workouts(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    return await _backend("/internal/workouts/link", {
+        "user_id": user_id, "workout_id": _i(args["workout_id"]),
+        "other_workout_id": _i(args.get("other_workout_id")),
+    })
+
+
+async def _unlink_workout(conn: asyncpg.Connection, user_id: int, args: dict) -> dict:
+    return await _backend("/internal/workouts/unlink", {"user_id": user_id, "workout_id": _i(args["workout_id"])})
 
 
 # Per-type bests in get_workout_stats, and the numbers shown for each recent session
@@ -2725,6 +2877,10 @@ EDIT_HANDLERS = {
     "delete_body_weight": _delete_body_weight,
     "update_personal_record": _update_personal_record,
     "delete_personal_record": _delete_personal_record,
+    "sync_garmin": _sync_garmin,
+    "get_daily_health": _get_daily_health,
+    "link_workouts": _link_workouts,
+    "unlink_workout": _unlink_workout,
 }
 
 

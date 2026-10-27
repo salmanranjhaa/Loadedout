@@ -19,6 +19,7 @@ from app.models.budget import BudgetAccount, BudgetEntry  # noqa: F401
 from app.models.inventory import InventoryItem  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401
 from app.models.mcp_key import McpKey  # noqa: F401
+from app.models.garmin import GarminConnection, HealthDay, WorkoutTrack  # noqa: F401
 
 config = context.config
 

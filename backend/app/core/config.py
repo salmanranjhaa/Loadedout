@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     GOOGLE_ANDROID_CLIENT_ID: str = ""
     GOOGLE_IOS_CLIENT_ID: str = ""
 
+    # Garmin: a personal API key kept on the server for one user, used until
+    # that user saves their own key in Settings. Nobody else can use it.
+    GARMIN_API_KEY: str = ""
+    GARMIN_API_KEY_USER_ID: int = 0
+
+    # Shared with the MCP container so its tools can ask the backend to sync
+    # Garmin or link workouts. Internal calls are refused while it is empty.
+    INTERNAL_API_TOKEN: str = ""
+
     def get_allowed_origins(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -21,6 +22,8 @@ from app.api.routes_admin import router as admin_router
 from app.api.routes_sync import router as sync_router
 from app.api.routes_exercises import router as exercises_router
 from app.api.routes_food import router as food_router
+from app.api.routes_garmin import router as garmin_router
+from app.services.garmin import scheduler as garmin_scheduler
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -39,7 +42,10 @@ async def lifespan(_app: FastAPI):
     if not settings.MONGODB_URI:
         logger.warning("MONGODB_URI is not set — profile picture storage will be disabled.")
     logger.info(f"Starting {settings.APP_NAME} — model: {settings.VERTEX_AI_MODEL}")
+    # ponytail: runs in this process; fine with one uvicorn worker, give it a lock before adding workers
+    garmin_schedule = asyncio.create_task(garmin_scheduler())
     yield
+    garmin_schedule.cancel()
 
 
 app = FastAPI(
@@ -117,6 +123,7 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(sync_router, prefix="/api/v1")
 app.include_router(exercises_router, prefix="/api/v1")
 app.include_router(food_router, prefix="/api/v1")
+app.include_router(garmin_router, prefix="/api/v1")
 
 
 @app.get("/")

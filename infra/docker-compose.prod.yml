@@ -82,6 +82,10 @@ services:
     environment:
       MCP_DATABASE_URL: "postgresql://lifeplan_user:${POSTGRES_PASSWORD}@db:5432/lifeplan_db"
       MCP_PORT: "8003"
+      # Garmin sync and joining workouts are done by the backend; the MCP tools
+      # call it over this network with a token only these two containers share
+      BACKEND_URL: "http://backend:8000/api/v1"
+      INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN}"
     networks:
       - lifeplan-net
     depends_on:

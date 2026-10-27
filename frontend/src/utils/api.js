@@ -270,6 +270,21 @@ export const workoutAPI = {
   saveTemplate: (data) => request("/workout/templates", { method: "POST", body: JSON.stringify(data) }),
   updateTemplate: (id, data) => request(`/workout/templates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTemplate: (id) => request(`/workout/templates/${id}`, { method: "DELETE" }),
+  track: (id) => request(`/workout/${id}/track`),
+  link: (id, otherId) => request(`/workout/${id}/link`, { method: "POST", body: JSON.stringify({ other_id: otherId }) }),
+  unlink: (id) => request(`/workout/${id}/unlink`, { method: "POST" }),
+};
+
+export const garminAPI = {
+  status: () => request("/garmin"),
+  saveKey: (apiKey) => request("/garmin/key", { method: "PUT", body: JSON.stringify({ api_key: apiKey }) }),
+  disconnect: () => request("/garmin/key", { method: "DELETE" }),
+  settings: (data) => request("/garmin/settings", { method: "PUT", body: JSON.stringify(data) }),
+  sync: () => request("/garmin/sync", { method: "POST" }),
+};
+
+export const healthAPI = {
+  days: (start, end) => request(`/health/days?${new URLSearchParams({ ...(start && { start }), ...(end && { end }) })}`),
 };
 
 export const prAPI = {

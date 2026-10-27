@@ -36,7 +36,7 @@ function prefetchRoute(path) {
 const NAV_TABS = [
   { path: "/schedule",  icon: "calendar",  label: "Schedule" },
   { path: "/meals",     icon: "meal",      label: "Meals" },
-  { path: "/workout",   icon: "workout",   label: "Workout" },
+  { path: "/workout",   icon: "workout",   label: "Fitness" },
   { path: "/budget",    icon: "budget",    label: "Budget" },
   { path: "/inventory", icon: "pantry",    label: "Pantry" },
   { path: "/analytics", icon: "analytics", label: "Analytics" },
