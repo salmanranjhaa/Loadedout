@@ -274,7 +274,7 @@ export default function App() {
         fontFamily: T.fontFamily,
         display: "flex",
         flexDirection: "column",
-        maxWidth: 430,
+        maxWidth: T.appMaxWidth,
         margin: "0 auto",
         position: "relative",
       }}
@@ -334,7 +334,7 @@ export default function App() {
           left: "50%",
           transform: "translateX(-50%)",
           width: "100%",
-          maxWidth: 430,
+          maxWidth: T.appMaxWidth,
           background: "rgba(10,11,16,0.88)",
           backdropFilter: "blur(20px) saturate(180%)",
           WebkitBackdropFilter: "blur(20px) saturate(180%)",

@@ -135,7 +135,7 @@ export default function LoginPage({ onLogin }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "24px 20px",
+        padding: "calc(24px + env(safe-area-inset-top, 0px)) 20px calc(24px + env(safe-area-inset-bottom, 0px))",
         fontFamily: T.fontFamily,
         position: "relative",
         overflow: "hidden",

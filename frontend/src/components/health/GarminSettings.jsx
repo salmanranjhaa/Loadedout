@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { T } from "../../design/tokens";
+import { Icon } from "../../design/icons";
 import { Spinner, Toggle } from "../../design/components";
 import { garminAPI } from "../../utils/api";
 import { showToast } from "../../utils/toast";
@@ -15,8 +16,10 @@ const IMPORTS = [
 ];
 const SCHEDULE = [[0, "Off"], [3, "3 h"], [6, "6 h"], [24, "Daily"]];
 
-// Profile → Garmin: each user's own personal API key, what to import and how often
+// Profile → Connected services → Garmin: a row that opens each user's own
+// personal API key, what to import and how often (same pattern as Claude)
 export default function GarminSettings() {
+  const [open, setOpen] = useState(false);
   const [s, setS] = useState(null);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState("");
@@ -35,7 +38,21 @@ export default function GarminSettings() {
     setBusy("");
   }
 
-  if (!s) return <div style={{ padding: "12px 0", color: T.textDim, fontSize: 12 }}>Loading…</div>;
+  const header = (
+    <button onClick={() => setOpen(!open)} aria-expanded={open}
+      style={{ width: "100%", padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+      <div style={{ width: 28, height: 28, borderRadius: 8, background: T.elevated2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name="run" size={14} color={T.textMuted} />
+      </div>
+      <span style={{ fontSize: 13, color: T.text, fontWeight: 500, flex: 1 }}>Garmin</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: s?.status === "key_error" ? T.negative : s?.connected ? T.teal : T.textDim }}>
+        {!s ? "" : s.status === "key_error" ? "Key problem" : s.connected ? (s.syncing ? "Syncing…" : "Connected") : "Not connected"}
+      </span>
+      <Icon name="chev-right" size={14} color={T.textMuted} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+    </button>
+  );
+  if (!open) return header;
+  if (!s) return <>{header}<div style={{ padding: "0 14px 14px", color: T.textDim, fontSize: 12 }}>Loading…</div></>;
   const opts = s.settings || {};
   const statusLine = s.status === "key_error"
     ? { color: T.negative, text: s.last_error || "Garmin did not accept the key" }
@@ -44,7 +61,9 @@ export default function GarminSettings() {
       : { color: T.textDim, text: "Not connected" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
+    <>
+    {header}
+    <div style={{ display: "flex", flexDirection: "column", padding: "0 14px 14px" }}>
       <div style={{ ...row, alignItems: "flex-start", flexDirection: "column", gap: 6 }}>
         <div style={{ fontSize: 12, color: statusLine.color, fontWeight: 600 }}>{statusLine.text}</div>
         {s.key_source === "server" && <div style={{ fontSize: 11, color: T.textDim }}>Using the key set up on the server for your account. Save your own to replace it.</div>}
@@ -94,5 +113,6 @@ export default function GarminSettings() {
         )}
       </div>
     </div>
+    </>
   );
 }

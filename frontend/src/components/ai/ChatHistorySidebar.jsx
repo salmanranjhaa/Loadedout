@@ -3,7 +3,7 @@ import { T } from "../../design/tokens";
 import { relativeTime, groupByBucket } from "../../utils/time";
 
 // Gemini-style chat history drawer. The app frame is locked to a phone width
-// (max 430px), so on every viewport this presents as a slide-in drawer rather
+// (max T.appMaxWidth), so on every viewport this presents as a slide-in drawer rather
 // than a persistent two-column rail — triggered by the hamburger in the header.
 
 const PANEL_BG = "#0d0d0d";
