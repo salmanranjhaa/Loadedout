@@ -446,7 +446,7 @@ async def google_id_token_login(
             by_email = await db.execute(select(User).where(func.lower(User.email) == google_email.lower()))
             user = by_email.scalar_one_or_none()
         if not user:
-            raise HTTPException(status_code=404, detail="No account found for this Google email. Please sign up first.")
+            raise HTTPException(status_code=404, detail="This Google account isn't linked to a Loaded Out account. If you already have one, sign in with your username and password, then connect Google in Profile → Connected services. New here? Use Sign up.")
         if not user.is_active:
             raise HTTPException(status_code=403, detail="Account is disabled")
         user.google_sub = google_sub
@@ -562,7 +562,7 @@ async def google_callback(
                 user = by_email.scalar_one_or_none()
 
             if not user:
-                raise RuntimeError("No account found for this Google email. Please sign up first.")
+                raise RuntimeError("This Google account isn't linked to a Loaded Out account. If you already have one, sign in with your username and password, then connect Google in Profile → Connected services. New here? Use Sign up.")
 
             if not user.is_active:
                 raise RuntimeError("Account is disabled")
@@ -644,6 +644,16 @@ async def google_callback(
             if not user or not user.is_active:
                 raise RuntimeError("User not found or inactive")
 
+            # One Google account belongs to one user. Check before assigning:
+            # the next query autoflushes, and a clash used to surface as a raw
+            # IntegrityError in the app.
+            taken = await db.execute(select(User.id).where(User.google_sub == google_sub, User.id != user.id))
+            if taken.first():
+                raise RuntimeError(
+                    f"{google_email} is already linked to another Loaded Out account. "
+                    "Sign in to that account with Google, or connect a different Google account."
+                )
+
             user.google_sub = google_sub
             await _upsert_google_token(
                 db,
@@ -663,9 +673,19 @@ async def google_callback(
 
         raise RuntimeError("Unknown OAuth mode")
     except Exception as e:
+        # RuntimeError / HTTPException messages are written for the user; anything
+        # else (database, network) is logged and replaced with a plain message
+        if isinstance(e, HTTPException):
+            message = e.detail
+        elif isinstance(e, RuntimeError):
+            message = str(e)
+        else:
+            import logging
+            logging.getLogger(__name__).exception("Google OAuth callback failed (mode=%s)", mode)
+            message = "Google sign-in failed. Please try again."
         payload = {
             "status": "error",
             "mode": mode,
-            "error": str(e),
+            "error": message,
         }
         return HTMLResponse(build_popup_response_html(payload, origin, native_redirect_uri))

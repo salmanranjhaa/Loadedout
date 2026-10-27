@@ -584,3 +584,10 @@ export function runGoogleAuthFlow(authUrl, expectedMode, timeoutMs = 120000) {
   }
   return runGoogleAuthPopup(authUrl, expectedMode, timeoutMs);
 }
+
+// Link Google (sign-in + Calendar) to the signed-in account. Used by the
+// Schedule "Connect" chip and Profile → Connected services → Google.
+export async function connectGoogleAccount() {
+  const { auth_url } = await authAPI.getGoogleConnectUrl(getGoogleOAuthOrigin(), isNativePlatform());
+  return runGoogleAuthFlow(auth_url, "connect");
+}

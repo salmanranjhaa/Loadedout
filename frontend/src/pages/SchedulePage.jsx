@@ -5,19 +5,16 @@ import { showToast } from "../utils/toast";
 import {
   PageHeader, PageScroll, Chip, Fab, LoadingDots, EmptyState, Hint,
 } from "../design/components";
-import {
-  authAPI,
-  getGoogleOAuthOrigin,
-  isNativePlatform,
-  runGoogleAuthFlow,
-  scheduleAPI,
-} from "../utils/api";
+import { connectGoogleAccount, scheduleAPI } from "../utils/api";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const HOUR_START = 6;
-const HOUR_END = 21;
+const HOUR_START = 5;
+const HOUR_END = 22;
 const PX_PER_HOUR = 56;
+const MIN_TILE_MIN = 30;   // shortest tile, so a 10-minute event is still readable
+const TILE_GAP = 2;        // space between back-to-back tiles, as in Google Calendar
+const GUTTER = 52;         // hour labels on the left
 const EVENT_TYPES = ["routine","meal","exercise","focus","class","social","work"];
 
 const EMPTY_FORM = {
@@ -55,6 +52,35 @@ function minutesToPx(minutes) {
 function nowLinePx() {
   const now = new Date();
   return minutesToPx(now.getHours() * 60 + now.getMinutes());
+}
+
+const isGoogle = (e) => e.event_data?.source === "google_calendar";
+const isAllDay = (e) => !!e.event_data?.all_day || (e.start_time?.startsWith("00:00") && e.end_time?.startsWith("23:59"));
+
+// Google Calendar-style columns: events whose tiles overlap sit side by side,
+// and each group of overlapping events shares the width evenly.
+function layoutDay(events) {
+  const items = events
+    .map((event) => {
+      const start = timeToMinutes(event.start_time);
+      const end = event.end_time ? timeToMinutes(event.end_time) : start + 30;
+      return { event, start, end: Math.max(end, start + MIN_TILE_MIN) };
+    })
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+
+  let group = [], colEnds = [], groupEnd = 0;
+  const closeGroup = () => { group.forEach((it) => { it.cols = colEnds.length; }); group = []; colEnds = []; };
+  for (const it of items) {
+    if (group.length && it.start >= groupEnd) closeGroup();
+    let col = colEnds.findIndex((end) => end <= it.start);
+    if (col === -1) col = colEnds.length;
+    colEnds[col] = it.end;
+    it.col = col;
+    group.push(it);
+    groupEnd = group.length === 1 ? it.end : Math.max(groupEnd, it.end);
+  }
+  closeGroup();
+  return items;
 }
 
 // ── Create/Edit Modal ─────────────────────────────────────────────────────────
@@ -245,70 +271,73 @@ function EventModal({ initial, onSave, onCancel, saving, title: modalTitle }) {
   );
 }
 
-// ── Event card on timeline ─────────────────────────────────────────────────────
-function EventCard({ event, onEdit, onDelete }) {
-  const startMin = timeToMinutes(event.start_time);
-  const endMin = timeToMinutes(event.end_time || event.start_time) + 30;
-  const top = minutesToPx(startMin);
-  const height = Math.max(((endMin - startMin) / 60) * PX_PER_HOUR, 34);
-  const color = catColors[event.event_type] || T.textMuted;
+// ── Event tile on timeline ─────────────────────────────────────────────────────
+// A solid tile sized to the event, like Google Calendar. Google events are
+// read-only here (the next sync would undo an edit), so they get no buttons.
+function EventCard({ item, onEdit, onDelete }) {
   const [pressed, setPressed] = useState(false);
+  const { event, col, cols } = item;
+  const start = Math.max(item.start, HOUR_START * 60);
+  const end = Math.min(item.end, HOUR_END * 60);
+  if (end <= start) return null;
+  const top = minutesToPx(start);
+  const height = ((end - start) / 60) * PX_PER_HOUR - TILE_GAP;
+  const color = catColors[event.event_type] || T.textMuted;
+  const ink = "#0A0A0F";
+  const google = isGoogle(event);
+  const compact = height < 40;
+  const time = `${event.start_time?.slice(0,5)}${event.end_time ? `–${event.end_time.slice(0,5)}` : ""}`;
 
   return (
     <div
+      onClick={google ? undefined : () => onEdit(event)}
       style={{
         position: "absolute",
         top,
-        left: 52,
-        right: 6,
         height,
-        background: `${color}12`,
-        border: `1px solid ${color}28`,
-        borderLeft: `2.5px solid ${color}`,
-        borderRadius: 8,
-        padding: "5px 8px 4px",
-        cursor: "pointer",
+        left: `calc(${GUTTER}px + (100% - ${GUTTER + 4}px) * ${col} / ${cols})`,
+        width: `calc((100% - ${GUTTER + 4}px) / ${cols} - ${TILE_GAP}px)`,
+        background: color,
+        borderRadius: 6,
+        padding: compact ? "3px 6px" : "5px 7px",
+        cursor: google ? "default" : "pointer",
         overflow: "hidden",
-        opacity: pressed ? 0.65 : 1,
+        color: ink,
+        opacity: pressed ? 0.7 : 0.92,
         transition: "opacity 0.1s",
       }}
       onPointerDown={() => setPressed(true)}
       onPointerUp={() => setPressed(false)}
       onPointerLeave={() => setPressed(false)}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4, height: "100%" }}>
-        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.2 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 4, height: "100%" }}>
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: compact ? "row" : "column", gap: compact ? 5 : 1, alignItems: compact ? "baseline" : "stretch" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.2, overflowWrap: "anywhere", ...(compact ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 } : {}) }}>
             {event.title}
           </div>
-          <div style={{ fontSize: 9, color: T.textMuted, fontFamily: T.fontMono }}>
-            {event.start_time?.slice(0,5)}{event.end_time ? `–${event.end_time.slice(0,5)}` : ""}
-          </div>
-          {event.location && height > 50 && (
-            <div style={{ fontSize: 9, color: T.textDim, display: "flex", alignItems: "center", gap: 2, marginTop: 1 }}>
-              <Icon name="location" size={8} color={T.textDim} />
+          <div style={{ fontSize: 9, fontFamily: T.fontMono, opacity: 0.75, whiteSpace: "nowrap" }}>{time}</div>
+          {!compact && event.location && height > 52 && (
+            <div style={{ fontSize: 9, opacity: 0.75, display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
+              <Icon name="location" size={8} color={ink} />
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{event.location}</span>
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 1, flexShrink: 0, marginTop: -1 }}>
-          <button
-            aria-label={`Edit ${event.title}`}
-            title="Edit"
-            onClick={e => { e.stopPropagation(); onEdit(event); }}
-            style={{ background: "none", border: "none", padding: "2px 3px", cursor: "pointer", color: T.textDim, borderRadius: 4 }}
-          >
-            <Icon name="edit" size={10} color={T.textDim} />
-          </button>
+        {(google || event.also_in_google) && (
+          <span title={google ? "From Google Calendar" : "Also in Google Calendar"} style={{ flexShrink: 0, display: "flex", marginTop: 1 }}>
+            <Icon name="google" size={10} color={ink} />
+          </span>
+        )}
+        {!google && !compact && cols <= 2 && (
           <button
             aria-label={`Delete ${event.title}`}
             title="Delete"
             onClick={e => { e.stopPropagation(); onDelete(event.id); }}
-            style={{ background: "none", border: "none", padding: "2px 3px", cursor: "pointer", color: T.textDim, borderRadius: 4 }}
+            style={{ background: "none", border: "none", padding: "0 2px", cursor: "pointer", color: ink, borderRadius: 4, flexShrink: 0, opacity: 0.7 }}
           >
-            <Icon name="trash" size={10} color={T.textDim} />
+            <Icon name="trash" size={10} color={ink} />
           </button>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -328,6 +357,7 @@ export default function SchedulePage({ profile, onProfile }) {
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [nowPx, setNowPx] = useState(nowLinePx());
+  const [syncTick, setSyncTick] = useState(0);   // bumped by a background sync to reload the day
   const nowLineRef = useRef(null);
 
   const selectedDate = new Date(currentWeekMonday);
@@ -370,13 +400,27 @@ export default function SchedulePage({ profile, onProfile }) {
     load();
   }, [selectedDay, selectedDateISO]);
 
+  // After a background sync, refresh the shown day without the loading state
+  useEffect(() => { if (syncTick) refreshEvents(); }, [syncTick]);
+
   useEffect(() => {
     async function loadGoogleStatus() {
+      let status;
       try {
-        const status = await scheduleAPI.googleStatus();
-        setGoogleStatus(status);
+        status = await scheduleAPI.googleStatus();
       } catch {
-        setGoogleStatus({ connected: false });
+        status = { connected: false };
+      }
+      setGoogleStatus(status);
+      // Pull Google changes quietly when the last sync is over 15 minutes old;
+      // the server also syncs every 3 hours on its own
+      const stale = !status.last_sync_at || Date.now() - new Date(status.last_sync_at).getTime() > 15 * 60000;
+      if (status.connected && stale) {
+        try {
+          await scheduleAPI.googleSync(1, 30);
+          setGoogleStatus(await scheduleAPI.googleStatus());
+          setSyncTick((t) => t + 1);
+        } catch {}
       }
     }
     loadGoogleStatus();
@@ -392,9 +436,7 @@ export default function SchedulePage({ profile, onProfile }) {
   async function connectGoogle() {
     setGoogleLoading(true);
     try {
-      const native = isNativePlatform();
-      const { auth_url } = await authAPI.getGoogleConnectUrl(getGoogleOAuthOrigin(), native);
-      await runGoogleAuthFlow(auth_url, "connect");
+      await connectGoogleAccount();
       const status = await scheduleAPI.googleStatus();
       setGoogleStatus(status);
     } catch (e) {
@@ -473,6 +515,8 @@ export default function SchedulePage({ profile, onProfile }) {
   const railHeight = totalHours * PX_PER_HOUR;
   const isToday = weekOffset === 0 && selectedDay === todayIdx;
   const showNow = isToday && nowPx >= 0 && nowPx <= railHeight;
+  const allDay = events.filter(isAllDay);
+  const tiles = layoutDay(events.filter((e) => !isAllDay(e)));
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
@@ -590,6 +634,18 @@ export default function SchedulePage({ profile, onProfile }) {
         {loading ? (
           <LoadingDots />
         ) : (
+          <>
+          {/* All-day events sit above the hours, as in Google Calendar */}
+          {allDay.length > 0 && (
+            <div style={{ margin: "0 12px 6px", paddingLeft: GUTTER, display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {allDay.map((e) => (
+                <span key={e.id} style={{ fontSize: 11, fontWeight: 700, color: "#0A0A0F", background: catColors[e.event_type] || T.textMuted, opacity: 0.92, borderRadius: 6, padding: "3px 8px", display: "flex", alignItems: "center", gap: 5 }}>
+                  {e.title}
+                  {isGoogle(e) && <Icon name="google" size={10} color="#0A0A0F" />}
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{ position: "relative", margin: "0 12px", paddingTop: 4, paddingBottom: 32 }}>
             {/* Rail: hour lines + labels */}
             {Array.from({ length: totalHours + 1 }, (_, i) => {
@@ -666,16 +722,17 @@ export default function SchedulePage({ profile, onProfile }) {
               )}
 
               {/* Events */}
-              {events.map(ev => (
+              {tiles.map(item => (
                 <EventCard
-                  key={ev.id}
-                  event={ev}
+                  key={item.event.id}
+                  item={item}
                   onEdit={ev => setModal({ mode: "edit", event: ev })}
                   onDelete={handleDelete}
                 />
               ))}
             </div>
           </div>
+          </>
         )}
       </PageScroll>
 
