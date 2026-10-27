@@ -62,18 +62,22 @@ def test_edits_follow_the_same_rules():
 
 
 def test_card_to_pay_counts_card_purchases_minus_payments():
+    from datetime import date, timedelta
     from types import SimpleNamespace as E
-    from app.api.routes_budget import card_outstanding
+    from app.api.routes_budget import account_balances, card_to_pay
+    today, later = date.today(), date.today() + timedelta(days=5)
+    accounts = [E(id=1, name="Bank", kind="bank", opening_balance=0.0),
+                E(id=2, name="Card", kind="credit_card", opening_balance=0.0)]
     entries = [
-        E(amount=20.0, category="food", payment_method="card"),
-        E(amount=45.5, category="fun", payment_method="card"),
-        E(amount=64.8, category="food", payment_method="cash"),        # cash: not on the card
-        E(amount=1500.0, category="income", payment_method="card"),    # income never counts
-        E(amount=30.0, category="card_payment", payment_method="cash"),
+        E(amount=20.0, category="food", account_id=2, to_account_id=None, date=today),
+        E(amount=45.5, category="fun", account_id=2, to_account_id=None, date=today),
+        E(amount=64.8, category="food", account_id=1, to_account_id=None, date=today),       # paid from the bank
+        E(amount=1500.0, category="income", account_id=1, to_account_id=None, date=today),   # income never counts
+        E(amount=30.0, category="card_payment", account_id=1, to_account_id=2, date=today),
+        E(amount=100.0, category="card_payment", account_id=1, to_account_id=2, date=later),  # scheduled
     ]
-    assert card_outstanding(entries) == 35.5          # 65.5 on the card, 30 paid
-    entries.append(E(amount=100.0, category="card_payment", payment_method="cash"))
-    assert card_outstanding(entries) == 0.0           # overpaid reads as nothing owed
+    assert card_to_pay(account_balances(accounts, entries, today)) == 35.5    # 65.5 on the card, 30 paid
+    assert card_to_pay(account_balances(accounts, entries, later)) == 0.0     # overpaid reads as nothing owed
 
 
 def test_event_must_end_after_it_starts():

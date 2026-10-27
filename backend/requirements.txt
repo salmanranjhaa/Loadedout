@@ -19,3 +19,4 @@ numpy>=1.26.0
 slowapi==0.1.9
 motor>=3.3.0
 # sentence-transformers removed — uses PyTorch (~18GB); re-add when needed
+fitdecode==0.10.0

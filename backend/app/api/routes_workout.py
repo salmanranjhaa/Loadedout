@@ -10,9 +10,11 @@ from app.core.auth import get_current_user
 from app.core.limiter import limiter
 from app.models.analytics import WorkoutLog, WorkoutTemplate
 from app.models.fitness import PersonalRecord
+from app.models.garmin import WorkoutTrack
 from app.models.user import User
 from app.services.rag import schedule_workout_embedding
 from app.services.vertex_ai import analyze_workout
+from app.services.workout_links import auto_link, link, unlink
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workout", tags=["workout"])
@@ -233,6 +235,9 @@ async def save_workout(
         energy_level=entry.energy_level,
     )
     db.add(log)
+    await db.flush()
+    # The same session may already be here from Garmin: one workout, not two
+    log, linked = await auto_link(db, log)
     await db.commit()
     await db.refresh(log)
     schedule_workout_embedding(log.id)
@@ -243,6 +248,7 @@ async def save_workout(
         "type": log.workout_type,
         "duration": log.duration_minutes,
         "calories": log.calories_burned_est,
+        "linked": linked,
     }
 
 
@@ -262,6 +268,10 @@ async def get_workouts(
         .order_by(WorkoutLog.date.desc())
     )
     logs = result.scalars().all()
+    previews = dict((await db.execute(
+        select(WorkoutTrack.workout_log_id, WorkoutTrack.preview).where(
+            WorkoutTrack.user_id == user["sub"], WorkoutTrack.workout_log_id.in_([w.id for w in logs]))
+    )).all()) if logs else {}
     return {
         "workouts": [{
             "id": w.id,
@@ -280,6 +290,10 @@ async def get_workouts(
             "details": w.details,
             "ai_analysis": w.ai_analysis,
             "energy_level": w.energy_level,
+            "garmin_activity_id": w.garmin_activity_id,
+            "linked": bool(w.link_backup),
+            "has_track": w.id in previews,
+            "route_preview": previews.get(w.id),
         } for w in logs],
         "total": len(logs),
     }
@@ -576,6 +590,59 @@ async def update_workout(
     await db.refresh(log)
     schedule_workout_embedding(log.id)
     return {"id": log.id, "date": str(log.date), "name": _derive_workout_name(log)}
+
+
+async def _own_workout(db, user: dict, workout_id: int) -> WorkoutLog:
+    log = (await db.execute(
+        select(WorkoutLog).where(WorkoutLog.id == workout_id, WorkoutLog.user_id == user["sub"])
+    )).scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return log
+
+
+@router.get("/{workout_id}/track")
+@limiter.limit("100/minute")
+async def get_track(request: Request, workout_id: int, db: AsyncSession = Depends(get_db),
+                    user: dict = Depends(get_current_user)):
+    """The GPS route and the pace / heart rate / elevation along it."""
+    await _own_workout(db, user, workout_id)
+    t = (await db.execute(select(WorkoutTrack).where(
+        WorkoutTrack.workout_log_id == workout_id, WorkoutTrack.user_id == user["sub"]))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="This workout has no route")
+    return {"route": t.route, "streams": t.streams}
+
+
+class LinkBody(BaseModel):
+    other_id: int
+
+
+@router.post("/{workout_id}/link")
+@limiter.limit("30/minute")
+async def link_workout(request: Request, workout_id: int, body: LinkBody, db: AsyncSession = Depends(get_db),
+                       user: dict = Depends(get_current_user)):
+    """I fold two records of the same session into one workout."""
+    try:
+        kept = await link(db, await _own_workout(db, user, workout_id), await _own_workout(db, user, body.other_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    schedule_workout_embedding(kept.id)
+    return {"id": kept.id}
+
+
+@router.post("/{workout_id}/unlink")
+@limiter.limit("30/minute")
+async def unlink_workout(request: Request, workout_id: int, db: AsyncSession = Depends(get_db),
+                         user: dict = Depends(get_current_user)):
+    """I split a linked workout back into the two it was made of."""
+    try:
+        a, b = await unlink(db, await _own_workout(db, user, workout_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    return {"ids": [a.id, b.id]}
 
 
 @router.delete("/{workout_id}")

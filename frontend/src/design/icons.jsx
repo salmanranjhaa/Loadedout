@@ -50,6 +50,9 @@ export function Icon({ name, size = 20, color = "currentColor", strokeWidth = 1.
     case "camera":     return <svg {...v}><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" {...p}/><circle cx="12" cy="13" r="4" {...p}/></svg>;
     case "bank":       return <svg {...v}><path d="M3 9.5L12 4l9 5.5M4.5 10v8M9.5 10v8M14.5 10v8M19.5 10v8M3 20.5h18" {...p}/></svg>;
     case "transfer":   return <svg {...v}><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4" {...p}/></svg>;
+    case "sync":       return <svg {...v}><path d="M20 12a8 8 0 01-14 5.3M4 12a8 8 0 0114-5.3M18 3v4h-4M6 21v-4h4" {...p}/></svg>;
+    case "moon":       return <svg {...v}><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" {...p}/></svg>;
+    case "link":       return <svg {...v}><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" {...p}/></svg>;
     case "copy":    return <svg {...v}><rect x="9" y="9" width="13" height="13" rx="2" {...p}/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" {...p}/></svg>;
     default:           return <svg {...v}><circle cx="12" cy="12" r="8" {...p}/></svg>;
   }

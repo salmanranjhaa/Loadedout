@@ -3,6 +3,7 @@ import { T } from "../design/tokens";
 import { Icon } from "../design/icons";
 import { userAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
+import GarminSettings from "../components/health/GarminSettings";
 
 function Mascot({ glowing }) {
   return (
@@ -622,6 +623,11 @@ export default function FullProfilePage({ profile, onClose, onLogout, onProfileU
               style={{ flex: 1, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.text, outline: "none", fontFamily: "inherit" }} />
             <button onClick={addSupplement} style={{ padding: "0 14px", background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 8, color: T.teal, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
           </div>
+        </SGroup>
+
+        {/* Garmin */}
+        <SGroup title="Garmin">
+          <div style={{ padding: "4px 14px 14px" }}><GarminSettings /></div>
         </SGroup>
 
         {/* Preferences */}

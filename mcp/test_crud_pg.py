@@ -160,6 +160,26 @@ async def main():
         await call("delete_workout", workout_id=w["id"])
     print("  PASS workout details: shared fields, run metrics, parts, merge, filters and per-type stats")
 
+    # ---- Garmin data written by the backend sync, read through the connector
+    g = (await call("log_workout", workout_type="running", duration_minutes=24, details={"distance_km": 2.8}))["workout"]
+    await conn.execute("UPDATE workout_logs SET garmin_activity_id = 111 WHERE id = $1", g["id"])
+    await conn.execute("INSERT INTO workout_tracks (user_id, workout_log_id, route, streams) VALUES ($1, $2, $3::json, $4::json)",
+                       uid, g["id"], json.dumps([[47.4, 9.3], [47.41, 9.31]]), json.dumps({"hr": [150, 160]}))
+    await conn.execute("INSERT INTO health_days (user_id, date, steps, resting_hr, data) VALUES ($1, $2, 6412, 54, $3::json), ($4, $2, 999, 70, NULL)",
+                       uid, date.today(), json.dumps({"heart_rate": {"resting": 54, "samples": [[0, 60]]},
+                                                      "sleep": {"seconds": 25920}}), other)
+    got = (await call("get_workouts", workout_id=g["id"], include_track=True))["workouts"][0]
+    assert got["garmin_activity_id"] == 111 and got["has_route"] and got["track"]["route"][0] == [47.4, 9.3], got
+    assert not (await call("get_workouts", workout_id=g["id"]))["workouts"][0].get("track")
+    days = (await call("get_daily_health"))["days"]
+    assert [(d["steps"], d["heart_rate"]) for d in days] == [(6412, {"resting": 54})], days    # mine only, no samples
+    assert (await call("get_daily_health", include_samples=True))["days"][0]["heart_rate"]["samples"] == [[0, 60]]
+    assert (await call("get_daily_health", user=other))["days"][0]["steps"] == 999
+    assert "not set up" in await refused("sync_garmin")                         # no backend token in this test
+    await call("delete_workout", workout_id=g["id"])                             # its track goes with it
+    assert await conn.fetchval("SELECT count(*) FROM workout_tracks") == 0
+    print("  PASS Garmin data: route on request, daily health per user, sync needs the backend")
+
     # ---- schedule
     ev = (await call("add_schedule_event", title="Gym", event_type="exercise", day_of_week=0,
                      start_time="07:00", end_time="08:00"))["event"]

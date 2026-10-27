@@ -1,4 +1,5 @@
 import { T } from "../../design/tokens";
+import { fmtSecs } from "../../utils/workouts";
 
 // Everything type-specific about a workout sits in workout.details, written by
 // Claude through the connector (see mcp/server.py WORKOUT_DETAIL_ARGS). This
@@ -18,12 +19,6 @@ export function workoutStyle(type) {
   }
 }
 
-// 1447 -> "24:07", 5032 -> "1:23:52"
-export function fmtSecs(s) {
-  if (typeof s !== "number") return String(s ?? "");
-  const t = Math.round(s), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = String(t % 60).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
-}
 
 const LABELS = {
   tss: "TSS", ftp_w: "FTP", avg_hr: "Avg HR", max_hr: "Max HR", rpe_session: "Session RPE",
@@ -66,6 +61,7 @@ export function summaryTiles(w) {
 const OWN_BLOCK = new Set([
   "name", "exercises", "total_volume_kg", "parts", "splits", "hr_zone_seconds", "source", "recording_note",
   "subtype", "location", "start_time", "distance_km", "avg_pace_s_per_km", "total_time_s", "avg_hr", "notes",
+  "garmin_activity_type", "keep_apart_from", "link_suggestions",
 ]);
 
 const sectionLabel = { fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.8, textTransform: "uppercase" };

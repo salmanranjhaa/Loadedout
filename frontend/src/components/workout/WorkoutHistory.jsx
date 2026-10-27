@@ -6,6 +6,7 @@ import { workoutAPI } from "../../utils/api";
 import { replaceLocalCopy } from "../../utils/workouts";
 import { showToast } from "../../utils/toast";
 import WorkoutDetails, { workoutStyle, summaryTiles, hasDetails } from "./WorkoutDetails";
+import RouteMap from "./RouteMap";
 
 // "2026-10-05" -> "Mon 5 Oct" (local date, same style as Budget)
 function fmtDay(raw) {
@@ -21,8 +22,74 @@ const field = {
 };
 const labelStyle = { fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 };
 
+// The shape of a run's route, for the history list ([[lat, lon], …])
+function RouteThumb({ points, color }) {
+  const W = 52, H = 44, pad = 5;
+  const lat0 = points[0][0] * Math.PI / 180;
+  const xs = points.map((p) => p[1] * Math.cos(lat0)), ys = points.map((p) => p[0]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const s = Math.min((W - 2 * pad) / (x1 - x0 || 1), (H - 2 * pad) / (y1 - y0 || 1));
+  const ox = (W - (x1 - x0) * s) / 2, oy = (H - (y1 - y0) * s) / 2;
+  const d = xs.map((x, i) => `${i ? "L" : "M"}${(ox + (x - x0) * s).toFixed(1)} ${(oy + (y1 - ys[i]) * s).toFixed(1)}`).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0, borderRadius: 10, background: "#141a24" }}>
+      <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// ── Join a Garmin recording and your own entry of the same session, or split them ─
+function LinkPanel({ workout, history, busy, onLink, onUnlink }) {
+  const [picking, setPicking] = useState(false);
+  const day = String(workout.date || "").slice(0, 10);
+  const sameDay = history.filter((w) => w.id && w.id !== workout.id && String(w.date || "").slice(0, 10) === day);
+  const suggested = (workout.details?.link_suggestions || []).map((id) => sameDay.find((w) => w.id === id)).filter(Boolean);
+  const box = { background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 };
+  const title = { fontSize: 11, fontWeight: 600, color: T.textMuted, letterSpacing: 0.6, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 };
+  const choice = (w) => (
+    <button key={w.id} disabled={busy} onClick={() => onLink(w)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, color: T.text, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+      <span style={{ flex: 1 }}>
+        {w.name || w.workout_type}
+        <span style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 11 }}> · {w.duration_minutes || 0}m{w.details?.start_time ? ` · ${w.details.start_time}` : ""}{w.garmin_activity_id ? " · Garmin" : ""}</span>
+      </span>
+      <span style={{ color: T.teal, fontWeight: 700 }}>Join</span>
+    </button>
+  );
+
+  if (workout.linked) {
+    return (
+      <div style={box}>
+        <div style={title}><Icon name="link" size={13} color={T.sky} /> Joined into one workout</div>
+        <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>Garmin's recording and your own entry of this session: measured numbers and route from Garmin, name, notes and parts from you. Counted once.</div>
+        <button disabled={busy} onClick={onUnlink} style={{ alignSelf: "flex-start", padding: "7px 12px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 9999, color: T.text, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Split again</button>
+      </div>
+    );
+  }
+  return (
+    <>
+      {suggested.length > 0 && (
+        <div style={{ ...box, borderColor: `${T.amber}66` }}>
+          <div style={{ ...title, color: T.amber }}><Icon name="link" size={13} color={T.amber} /> Same session as one of these?</div>
+          {suggested.map(choice)}
+        </div>
+      )}
+      {sameDay.length > 0 && suggested.length === 0 && (picking ? (
+        <div style={box}>
+          <div style={title}><Icon name="link" size={13} color={T.textMuted} /> Join with…</div>
+          {sameDay.map(choice)}
+          <button onClick={() => setPicking(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", color: T.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+        </div>
+      ) : (
+        <button onClick={() => setPicking(true)} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", color: T.sky, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+          <Icon name="link" size={13} color={T.sky} /> Same session as another workout that day? Join them
+        </button>
+      ))}
+    </>
+  );
+}
+
 // ── Workout detail bottom-sheet (view, edit, delete) ──────────────────────────
-function WorkoutDetailModal({ workout, onClose, onChanged }) {
+function WorkoutDetailModal({ workout, history = [], onClose, onChanged }) {
   const [draft, setDraft] = useState(null); // set while editing
   const [busy, setBusy] = useState(false);
   if (!workout) return null;
@@ -83,6 +150,33 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
       onClose();
     } catch (e) {
       showToast(e?.message || "Couldn't delete the workout", "error");
+    }
+    setBusy(false);
+  }
+
+  async function linkTo(other) {
+    setBusy(true);
+    try {
+      await workoutAPI.link(workout.id, other.id);
+      showToast("Joined into one workout", "success");
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      showToast(e?.message || "Couldn't join the workouts", "error");
+    }
+    setBusy(false);
+  }
+
+  async function unlinkIt() {
+    if (!window.confirm("Split this back into the Garmin recording and your own entry? They won't be joined again automatically.")) return;
+    setBusy(true);
+    try {
+      await workoutAPI.unlink(workout.id);
+      showToast("Split into two workouts", "success");
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      showToast(e?.message || "Couldn't split the workout", "error");
     }
     setBusy(false);
   }
@@ -186,6 +280,8 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
           ))}
         </div>
 
+        {workout.has_track && <RouteMap workoutId={workout.id} color={borderColor} />}
+
         <WorkoutDetails workout={workout} color={borderColor} />
 
         {/* Notes / AI analysis if present. Live sessions lead their notes with an
@@ -267,6 +363,8 @@ function WorkoutDetailModal({ workout, onClose, onChanged }) {
             No exercise data recorded for this session.
           </div>
         )}
+
+        {workout.id && <LinkPanel workout={workout} history={history} busy={busy} onLink={linkTo} onUnlink={unlinkIt} />}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button aria-label="Delete workout" title="Delete" onClick={remove} disabled={busy} style={{ width: 52, flexShrink: 0, background: T.elevated, border: `1px solid ${T.border}`, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -371,9 +469,13 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
               onMouseEnter={(e) => (e.currentTarget.style.background = T.elevated)}
               onMouseLeave={(e) => (e.currentTarget.style.background = T.surface)}
             >
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: borderColor + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon name={iconName} size={18} color={borderColor} />
-              </div>
+              {w.route_preview?.length > 1 ? (
+                <RouteThumb points={w.route_preview} color={borderColor} />
+              ) : (
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: borderColor + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon name={iconName} size={18} color={borderColor} />
+                </div>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: T.text, textTransform: "capitalize" }}>{w.name || type}</span>
@@ -411,7 +513,7 @@ export default function WorkoutHistory({ history, loading, onSelect, onChanged }
 
       {/* Detail modal */}
       {selectedWorkout && (
-        <WorkoutDetailModal key={selectedWorkout.id || selectedWorkout.loggedAt} workout={selectedWorkout} onClose={() => setSelected(null)} onChanged={onChanged} />
+        <WorkoutDetailModal key={selectedWorkout.id || selectedWorkout.loggedAt} workout={selectedWorkout} history={history} onClose={() => setSelected(null)} onChanged={onChanged} />
       )}
     </>
   );

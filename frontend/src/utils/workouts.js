@@ -8,6 +8,13 @@ const isLocalCopyOf = (local, apiLog) =>
   (local.date || local.loggedAt || "").slice(0, 10) === (apiLog.date || "").slice(0, 10) &&
   (apiLog.notes || "").startsWith(local.name || "");
 
+// 1447 -> "24:07", 5032 -> "1:23:52"
+export function fmtSecs(s) {
+  if (typeof s !== "number") return String(s ?? "");
+  const t = Math.round(s), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
 // Merge the two without counting a workout twice.
 export function mergeWorkoutHistory(apiLogs, localHistory) {
   const localOnly = localHistory.filter((l) => !apiLogs.some((a) => isLocalCopyOf(l, a)));
