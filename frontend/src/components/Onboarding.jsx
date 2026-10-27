@@ -112,7 +112,7 @@ export default function Onboarding({ profile, onComplete, onSkip }) {
   const label = { fontSize: 11, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: T.bg, display: "flex", flexDirection: "column", maxWidth: 430, margin: "0 auto" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 10, background: T.bg, display: "flex", flexDirection: "column", maxWidth: T.appMaxWidth, margin: "0 auto" }}>
       {/* Progress */}
       <div style={{ display: "flex", gap: 6, padding: "max(env(safe-area-inset-top, 16px), 16px) 24px 0" }}>
         {[0, 1, 2, 3].map((i) => (

@@ -108,7 +108,7 @@ export default function BudgetEntrySheet({ onClose, onSaved, cur, accounts = [],
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, paddingTop: "env(safe-area-inset-top, 0px)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(2px)" }} />
       <div style={{ position: "relative", background: T.surface, borderRadius: "20px 20px 0 0", padding: `16px 20px calc(${T.navHeight} + 20px)`, border: `1px solid ${T.border}`, borderBottom: "none", maxHeight: "calc(100% - 24px)", overflowY: "auto" }}>
         <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, margin: "0 auto 16px" }} />

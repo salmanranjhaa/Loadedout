@@ -6,6 +6,7 @@ import {
 } from "../design/components";
 import { userAPI } from "../utils/api";
 import { showToast } from "../utils/toast";
+import GarminSettings from "../components/health/GarminSettings";
 
 // ── Claude connector: personal links to the Loaded Out MCP server ─────────────
 const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -464,7 +465,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
               </div>
               <div style={{ flex: 1, textAlign: "left" }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Full settings</div>
-                <div style={{ fontSize: 11, color: T.textMuted }}>Goals, macros, AI coach, connected apps</div>
+                <div style={{ fontSize: 11, color: T.textMuted }}>Goals, macros, training, supplements</div>
               </div>
               <Icon name="chev-right" size={14} color={T.textMuted} />
             </button>
@@ -517,6 +518,7 @@ export default function ProfileDrawer({ profile, onClose, onLogout, onProfileUpd
               {p.google_connected ? "Connected" : "Not connected"}
             </span>
           </div>
+          <div style={{ borderBottom: `0.5px solid ${T.border}` }}><GarminSettings /></div>
           <ClaudeConnector />
         </SettingsGroup>
 

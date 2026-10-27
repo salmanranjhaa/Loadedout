@@ -27,8 +27,10 @@ function Tiles({ items, color }) {
 // Heart rate, sleep and daily activity from the watch, over the last 30 days
 export default function HealthDetail({ tab, days, onTab, onClose }) {
   const byDate = Object.fromEntries(days.map((d) => [d.date, d]));
+  // Fixed over the whole screen (status-bar spacer included), so it carries
+  // the top inset itself, like FullProfilePage
   return (
-    <div style={{ position: "fixed", inset: 0, bottom: T.navHeight, zIndex: T.z.modal, background: T.bg, display: "flex", flexDirection: "column", animation: "lo-slide-in 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+    <div style={{ position: "fixed", inset: 0, bottom: T.navHeight, paddingTop: "env(safe-area-inset-top, 0px)", zIndex: T.z.modal, background: T.bg, display: "flex", flexDirection: "column", animation: "lo-slide-in 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
       <DetailHeader onBack={onClose} title={TABS.find(([k]) => k === tab)[1]} subtitle="from Garmin" />
       <div style={{ display: "flex", gap: 6, padding: "0 16px 10px" }}>
         {TABS.map(([k, l]) => (

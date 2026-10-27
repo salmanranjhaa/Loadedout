@@ -63,7 +63,7 @@ export default function BodyToday({ onSynced }) {
   if (!status.connected) {
     return (
       <div style={{ margin: "0 20px 16px", padding: "12px 14px", background: T.surface, border: `1px dashed ${T.borderStrong}`, borderRadius: T.rCard, fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>
-        <b style={{ color: T.text }}>Connect Garmin</b> to see steps, heart rate and sleep here, and get your runs with their route. Add your key under Profile → Full settings → Garmin.
+        <b style={{ color: T.text }}>Connect Garmin</b> to see steps, heart rate and sleep here, and get your runs with their route. Add your key under Profile → Connected services → Garmin.
       </div>
     );
   }

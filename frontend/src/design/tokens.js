@@ -112,6 +112,11 @@ export const T = {
   // --nav-h to 0px while the bar is hidden for the on-screen keyboard, so every
   // sheet reclaims that space too.
   navHeight: "var(--nav-h, calc(58px + env(safe-area-inset-bottom, 0px)))",
+
+  // Widest the app frame, tab bar and bottom sheets grow. Above every phone
+  // (some Android phones are ~480px wide) so phones always fill edge to edge;
+  // only tablets and desktop get a centred column.
+  appMaxWidth: 600,
 };
 
 // Per-domain accents — each tab/page area carries its own hue so the app

@@ -213,7 +213,7 @@ function WorkoutSummary({ workout, onClose }) {
   return (
     // Stops above the fixed tab bar (like the live session does) and scrolls on
     // short screens, so "Done" is never hidden under the bar.
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: T.navHeight, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: 24, animation: "lo-fade-up 0.3s ease" }}>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: T.navHeight, zIndex: T.z.modal + 30, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: "calc(24px + env(safe-area-inset-top, 0px)) 24px 24px", animation: "lo-fade-up 0.3s ease" }}>
       {/* Glow orb */}
       <div style={{ position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${T.teal}22, transparent 70%)`, pointerEvents: "none" }} />
 
@@ -752,7 +752,7 @@ export default function ActiveWorkout({ open, onClose, template, onFinish }) {
           style={{ position: "fixed", inset: 0, zIndex: T.z.modal + 25, background: "rgba(10,11,16,0.88)", display: "flex", alignItems: "flex-end", backdropFilter: "blur(4px)" }}
           onClick={(e) => e.target === e.currentTarget && setShowGuard(false)}
         >
-          <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, display: "flex", flexDirection: "column", gap: 12, animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
+          <div style={{ width: "100%", maxWidth: T.appMaxWidth, margin: "0 auto", background: T.surface, borderRadius: "20px 20px 0 0", border: `1px solid ${T.border}`, borderBottom: "none", padding: "20px 20px 24px", marginBottom: T.navHeight, display: "flex", flexDirection: "column", gap: 12, animation: "lo-slide-up 0.25s cubic-bezier(0.32,0.72,0,1) forwards" }}>
             <div style={{ width: 36, height: 4, borderRadius: 9999, background: T.border, alignSelf: "center", marginBottom: 4 }} />
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>Leave this workout?</div>

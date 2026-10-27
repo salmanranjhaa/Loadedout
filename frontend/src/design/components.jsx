@@ -645,6 +645,8 @@ export function BottomSheet({ open, onClose, title, children, fill = false }) {
         position: "fixed",
         inset: 0,
         zIndex: T.z.modal,
+        // The sheet's % heights then measure from below the status bar
+        paddingTop: "env(safe-area-inset-top, 0px)",
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
@@ -661,7 +663,7 @@ export function BottomSheet({ open, onClose, title, children, fill = false }) {
           borderBottom: "none",
           padding: "20px 20px 24px",
           width: "100%",
-          maxWidth: 430,
+          maxWidth: T.appMaxWidth,
           // Float the sheet above the fixed bottom nav so its action buttons are
           // never hidden behind it; the dark backdrop still fills the rest.
           marginBottom: T.navHeight,
